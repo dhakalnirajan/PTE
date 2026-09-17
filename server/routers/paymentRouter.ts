@@ -416,7 +416,7 @@ export const paymentRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
-      await cancelSubscription(input.subscriptionId);
+      await cancelSubscription(input.subscriptionId, ctx.user.id);
 
       try {
         if (ctx.user.email) {

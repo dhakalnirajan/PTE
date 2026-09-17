@@ -252,7 +252,7 @@ export async function getUserActiveSubscription(userId: number) {
   return subscription;
 }
 
-export async function cancelSubscription(subscriptionId: number) {
+export async function cancelSubscription(subscriptionId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
 
@@ -263,7 +263,7 @@ export async function cancelSubscription(subscriptionId: number) {
       canceledAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(subscriptions.id, subscriptionId));
+    .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)));
 }
 
 /**

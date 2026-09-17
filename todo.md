@@ -417,3 +417,65 @@ Full detail in docs/CHANGELOG.md.
 - [ ] Admin panel integration tests
 - [ ] User-data isolation audit (per-user WHERE, session/SRS isolation, audio upload namespacing)
 - [ ] Reset the admin-content tab: question upload/edit UI (currently read-only counts)
+
+
+## Phase 21 — Legal, Compliance & Trust
+
+- [ ] Add Privacy Policy page (data collection, storage, third-party sharing, cookies, user rights)
+- [ ] Add Terms of Service page (acceptable use, liability, dispute resolution)
+- [ ] Add Refund Policy page (conditions, process, timeframes for eSewa/Khalti)
+- [ ] Add Cookie Policy page (what cookies are used, why, how to manage)
+- [ ] Add Cookie Consent Banner (on first visit, option to accept/reject non-essential cookies)
+- [ ] Check form consents (terms checkbox on signup, consent for data processing)
+- [ ] Ensure no unnecessary data collection (only what's needed for PTE practice)
+- [ ] Remove hidden fees (all pricing transparent on Pricing page)
+- [ ] Remove fake reviews and add very realistic reviews (testimonials from real PTE students)
+- [ ] Remove unsupported claims (any claims not backed by evidence)
+- [ ] Add age consent for kids' data (COPPA compliance — age gate or parental consent)
+- [ ] Add unsubscribe link in emails (one-click unsubscribe in all marketing emails)
+- [ ] License fonts and images (verify Google Fonts license, image attributions)
+- [ ] Add data deletion request page/form (users can request full account + data deletion)
+
+
+## Phase 22 — Security Hardening
+
+- [ ] Force HTTPS (redirect all HTTP to HTTPS)
+- [ ] Add HSTS header (Strict-Transport-Security with long max-age)
+- [ ] Add CSRF tokens (protect all state-changing POST/PUT/DELETE requests)
+- [ ] Reset sessions on password change (invalidate all existing sessions for the user)
+- [ ] Expire password reset links (time-limited tokens, e.g., 15 minutes)
+- [ ] Whitelist upload types (only allow specific file types for audio/images)
+- [ ] Rate limit password resets (max N attempts per hour per email/IP)
+- [ ] Sanitize before storing (strip HTML/scripts from all user text inputs)
+- [ ] Disable directory listing (ensure server doesn't expose directory contents)
+- [ ] Hide admin routes from ordinary users (admin panel not linked/visible for non-admins)
+- [ ] Lock accounts after failed login (N failed attempts → temporary lockout)
+- [ ] Set secure cookie flags (HttpOnly, Secure, SameSite=Strict)
+- [ ] Restrict database permissions (DB user has minimal required privileges)
+- [ ] Block field tampering (server-side validation for all form fields, ignore hidden/readonly fields)
+- [ ] Secure session cookies (short expiry, regeneration on login)
+- [ ] Add bot protection (rate limiting, CAPTCHA on signup/contact forms, honeypot fields)
+
+
+## Phase 23 — SEO & Discoverability
+
+- [ ] Add meta titles and descriptions to all pages
+- [ ] Add favicon (multiple sizes: 16x16, 32x32, 180x180, 192x192, 512x512)
+- [ ] Add sitemap.xml (auto-generated or static, all public pages)
+- [ ] Add robots.txt (allow crawling of public pages, block admin/auth)
+- [ ] Add social preview/OG image (1200x630px, shared across all pages)
+
+
+## Phase 24 — UX, Accessibility & Polish
+
+- [ ] Make all pages mobile friendly (responsive layouts, touch targets, no horizontal scroll)
+- [ ] Fix broken links (404 audit across all pages and docs)
+- [ ] Add form validation (client-side + server-side, clear error messages)
+- [ ] Add spam protection (honeypot fields, rate limiting on forms)
+- [ ] Ensure one clear Call-to-Action per page (primary action prominent)
+- [ ] Remove low-contrast web interface and replace with WCAG AA compliant colors (minimum 4.5:1 contrast)
+- [ ] Remove badges (clean up decorative badges that add clutter)
+- [ ] Remove Lucide Icons and use FontAwesome icons (full icon set replacement)
+- [ ] Add accessibility alt text to all images (descriptive, not generic)
+- [ ] Fix color contrast across all components (text on backgrounds must meet WCAG AA)
+- [ ] Ensure keyboard navigation works on all interactive elements (tab order, focus indicators, skip links)

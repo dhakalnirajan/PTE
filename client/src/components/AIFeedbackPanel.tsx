@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain, ChevronDown, ChevronUp, Star, AlertTriangle, CheckCircle,
   Lightbulb, Target, BookOpen, TrendingUp, X, Loader2, Sparkles
@@ -161,29 +162,39 @@ export default function AIFeedbackPanel({ responseId, taskType, score, maxScore,
                 </div>
                 {expanded.breakdown ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
               </button>
-              {expanded.breakdown && (
-                <div className="p-4 space-y-3">
-                  {feedback.scoreBreakdown.map((item, i) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-semibold text-gray-700">{item.criterion}</span>
-                        <span className="text-xs font-bold text-gray-900">{item.score}/{item.maxScore}</span>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-1">
-                        <div
-                          className={`h-full rounded-full ${
-                            item.score / item.maxScore >= 0.8 ? "bg-emerald-500" :
-                            item.score / item.maxScore >= 0.6 ? "bg-blue-500" :
-                            item.score / item.maxScore >= 0.4 ? "bg-amber-500" : "bg-red-500"
-                          }`}
-                          style={{ width: `${(item.score / item.maxScore) * 100}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-gray-500">{item.comment}</p>
+              <AnimatePresence>
+                {expanded.breakdown && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 space-y-3">
+                      {feedback.scoreBreakdown.map((item, i) => (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-semibold text-gray-700">{item.criterion}</span>
+                            <span className="text-xs font-bold text-gray-900">{item.score}/{item.maxScore}</span>
+                          </div>
+                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-1">
+                            <div
+                              className={`h-full rounded-full ${
+                                item.score / item.maxScore >= 0.8 ? "bg-emerald-500" :
+                                item.score / item.maxScore >= 0.6 ? "bg-blue-500" :
+                                item.score / item.maxScore >= 0.4 ? "bg-amber-500" : "bg-red-500"
+                              }`}
+                              style={{ width: `${(item.score / item.maxScore) * 100}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500">{item.comment}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Specific Errors */}
@@ -199,28 +210,38 @@ export default function AIFeedbackPanel({ responseId, taskType, score, maxScore,
                   </div>
                   {expanded.errors ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
                 </button>
+                <AnimatePresence>
                 {expanded.errors && (
-                  <div className="p-4 space-y-4">
-                    {feedback.specificErrors.map((err, i) => (
-                      <div key={i} className="bg-red-50 border border-red-100 rounded-xl p-4">
-                        <div className="flex items-start gap-2 mb-2">
-                          <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">{err.type}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 mb-2">
-                          <div>
-                            <p className="text-xs text-gray-500 mb-1">You wrote:</p>
-                            <p className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded font-mono">{err.example}</p>
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 space-y-4">
+                      {feedback.specificErrors.map((err, i) => (
+                        <div key={i} className="bg-red-50 border border-red-100 rounded-xl p-4">
+                          <div className="flex items-start gap-2 mb-2">
+                            <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">{err.type}</span>
                           </div>
-                          <div>
-                            <p className="text-xs text-gray-500 mb-1">Should be:</p>
-                            <p className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded font-mono">{err.correction}</p>
+                          <div className="grid grid-cols-2 gap-3 mb-2">
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">You wrote:</p>
+                              <p className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded font-mono">{err.example}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Should be:</p>
+                              <p className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded font-mono">{err.correction}</p>
+                            </div>
                           </div>
+                          <p className="text-xs text-gray-600">{err.explanation}</p>
                         </div>
-                        <p className="text-xs text-gray-600">{err.explanation}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </motion.div>
                 )}
+              </AnimatePresence>
               </div>
             )}
 
@@ -236,27 +257,37 @@ export default function AIFeedbackPanel({ responseId, taskType, score, maxScore,
                 </div>
                 {expanded.tips ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
               </button>
-              {expanded.tips && (
-                <div className="p-4 space-y-3">
-                  {feedback.improvementTips.map((tip, i) => (
-                    <div key={i} className="border border-gray-100 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${PRIORITY_COLORS[tip.priority]}`}>
-                          {tip.priority.toUpperCase()} PRIORITY
-                        </span>
-                        <span className="text-xs font-semibold text-gray-700">{tip.skill}</span>
-                      </div>
-                      <p className="text-sm text-gray-700 mb-2">{tip.tip}</p>
-                      <div className="bg-teal-50 border border-teal-100 rounded-lg p-3">
-                        <p className="text-xs text-teal-700">
-                          <span className="font-semibold">Practice Exercise: </span>
-                          {tip.practiceExercise}
-                        </p>
-                      </div>
+              <AnimatePresence>
+                {expanded.tips && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 space-y-3">
+                      {feedback.improvementTips.map((tip, i) => (
+                        <div key={i} className="border border-gray-100 rounded-xl p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${PRIORITY_COLORS[tip.priority]}`}>
+                              {tip.priority.toUpperCase()} PRIORITY
+                            </span>
+                            <span className="text-xs font-semibold text-gray-700">{tip.skill}</span>
+                          </div>
+                          <p className="text-sm text-gray-700 mb-2">{tip.tip}</p>
+                          <div className="bg-teal-50 border border-teal-100 rounded-lg p-3">
+                            <p className="text-xs text-teal-700">
+                              <span className="font-semibold">Practice Exercise: </span>
+                              {tip.practiceExercise}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Model Answers (Band 65 / 79 / 90) */}
@@ -272,19 +303,29 @@ export default function AIFeedbackPanel({ responseId, taskType, score, maxScore,
                   </div>
                   {expanded.model ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
                 </button>
+                <AnimatePresence>
                 {expanded.model && (
-                  <div className="p-4 space-y-3">
-                    {feedback.modelAnswers.map((ma, i) => (
-                      <div key={i} className="bg-purple-50 border border-purple-100 rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-200 text-purple-800">Band {ma.band}</span>
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 space-y-3">
+                      {feedback.modelAnswers.map((ma, i) => (
+                        <div key={i} className="bg-purple-50 border border-purple-100 rounded-xl p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-200 text-purple-800">Band {ma.band}</span>
+                          </div>
+                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-2">{ma.response}</p>
+                          <p className="text-xs text-purple-600 italic">{ma.commentary}</p>
                         </div>
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-2">{ma.response}</p>
-                        <p className="text-xs text-purple-600 italic">{ma.commentary}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </motion.div>
                 )}
+              </AnimatePresence>
               </div>
             )}
 

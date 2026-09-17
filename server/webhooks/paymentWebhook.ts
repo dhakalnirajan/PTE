@@ -83,17 +83,17 @@ router.post("/khalti", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    // Verify webhook signature
+    // Verify webhook signature (mandatory)
     const signature = req.headers["khalti-signature"] as string;
-    if (signature) {
-      const expectedSignature = crypto
-        .createHmac("sha256", KHALTI_SECRET)
-        .update(JSON.stringify(req.body))
-        .digest("hex");
-
-      if (signature !== expectedSignature) {
-        return res.status(401).json({ success: false, message: "Invalid signature" });
-      }
+    if (!signature) {
+      return res.status(401).json({ success: false, message: "Missing webhook signature" });
+    }
+    const expectedSignature = crypto
+      .createHmac("sha256", KHALTI_SECRET)
+      .update(JSON.stringify(req.body))
+      .digest("hex");
+    if (signature !== expectedSignature) {
+      return res.status(401).json({ success: false, message: "Invalid signature" });
     }
 
     if (status !== "Completed") {

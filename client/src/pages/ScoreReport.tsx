@@ -12,6 +12,9 @@ import {
   Mic, PenLine, Eye, Headphones, Brain, BookOpen
 } from "lucide-react";
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
+import { ConfettiCelebration } from "@/components/ConfettiCelebration";
+import { AnimatedCounter } from "@/components/AnimatedCounter";
+import { ScoreReportSkeleton } from "@/components/SkeletonLoader";
 
 function ScoreCircle({ score, label, color }: { score: number; label: string; color: string }) {
   const pct = ((score - 10) / 80) * 100;
@@ -63,17 +66,7 @@ export default function ScoreReport() {
 
   const { data: report, isLoading } = trpc.sessions.getReport.useQuery({ id: sessionId });
 
-  if (isLoading) {
-    return (
-      <PTELayout title="Score Report">
-        <div className="max-w-4xl space-y-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-40 bg-muted rounded-xl animate-pulse" />
-          ))}
-        </div>
-      </PTELayout>
-    );
-  }
+  if (isLoading) return <ScoreReportSkeleton />;
 
   if (!report) {
     return (
@@ -120,10 +113,12 @@ export default function ScoreReport() {
   };
 
   const overallBand = getScoreBand(report.overallScore || 0);
+  const showConfetti = (report.overallScore || 0) >= 79;
 
   return (
     <PTELayout title="Score Report">
       <div className="max-w-4xl space-y-6">
+        <ConfettiCelebration trigger={showConfetti} score={report.overallScore || 0} />
         {/* Header */}
         <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-6 text-primary-foreground">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -142,7 +137,11 @@ export default function ScoreReport() {
               </div>
             </div>
             <div className="text-center">
-              <div className="text-6xl font-extrabold">{report.overallScore ? Math.round(report.overallScore) : "—"}</div>
+              <div className="text-6xl font-extrabold">
+                {report.overallScore ? (
+                  <AnimatedCounter value={Math.round(report.overallScore)} className="text-6xl font-extrabold" />
+                ) : "—"}
+              </div>
               <div className="text-primary-foreground/70 text-sm">Overall Score</div>
               <div className="text-primary-foreground/50 text-xs">(10–90 scale)</div>
             </div>

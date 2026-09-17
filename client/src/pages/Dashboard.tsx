@@ -12,6 +12,7 @@ import { motion } from "framer-motion";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { AnimatedProgressBar } from "@/components/AnimatedProgressBar";
 import WalkthroughTour, { resetTour, type TourStep } from "@/components/WalkthroughTour";
+import { DashboardSkeleton } from "@/components/SkeletonLoader";
 import { pageVariants, staggerContainer, staggerItem, cardHover } from "@/lib/animations";
 
 const NAV_ITEMS = [
@@ -158,25 +159,7 @@ export default function Dashboard() {
   const { data: history } = trpc.sessions.myHistory.useQuery({ limit: 5 }, { enabled: isAuthenticated });
   const generateTarget = trpc.analytics.generateTarget.useMutation({ onSuccess: () => toast.success("Daily target set!") });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F7FA" }}>
-        <div className="text-center">
-          <motion.div
-            className="w-10 h-10 rounded-full border-4 mx-auto mb-3"
-            style={{ borderColor: "#26C6DA", borderTopColor: "transparent" }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-          />
-          <motion.p
-            className="text-gray-500 text-sm"
-            animate={{ opacity: [0.5, 1, 0.5] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          >Loading...</motion.p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <DashboardSkeleton />;
 
   if (!isAuthenticated) {
     return (
