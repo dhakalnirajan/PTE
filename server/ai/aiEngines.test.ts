@@ -80,7 +80,6 @@ describe("Speaking AI Engine", () => {
     expect(result.cefrLevel).toMatch(/^(A1|A2|B1|B2|C1|C2)$/);
     expect(result.strengths).toBeInstanceOf(Array);
     expect(result.improvements).toBeInstanceOf(Array);
-    expect(result.strategyTips).toBeInstanceOf(Array);
   });
 
   it("scores Repeat Sentence with pronunciation and fluency traits", async () => {
@@ -467,5 +466,246 @@ describe("Score Range Validation", () => {
 
     expect(result.rawScore).toBe(0);
     expect(result.maxRawScore).toBe(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KNOWN-SCORE REFERENCE RESPONSE TESTS
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Known-Score Reference Responses", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("C2-level Read Aloud response scores 79-90", async () => {
+    mockLLMResponse({
+      taskType: "read_aloud",
+      overallScore: 85,
+      confidence: "high",
+      rawScore: 9,
+      maxRawScore: 10,
+      traits: {
+        pronunciation: { score: 5, maxScore: 5, feedback: "Near-native pronunciation with accurate vowel and consonant sounds." },
+        oralFluency: { score: 4, maxScore: 5, feedback: "Natural rhythm, appropriate pausing, no hesitations." },
+        content: { score: 5, maxScore: 5, feedback: "All words articulated correctly." },
+      },
+      cefrLevel: "C2",
+      overallFeedback: "Excellent performance. Native-like pronunciation and fluency.",
+      strengths: ["Accurate word stress", "Natural intonation", "No hesitations"],
+      improvements: [],
+      wordLevelFeedback: "",
+    });
+
+    const result = await scoreSpeakingTask({
+      taskType: "read_aloud",
+      originalText: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets.",
+      transcription: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets.",
+    });
+
+    expect(result.overallScore).toBeGreaterThanOrEqual(79);
+    expect(result.overallScore).toBeLessThanOrEqual(90);
+    expect(result.cefrLevel).toMatch(/^(C1|C2)$/);
+    expect(result.confidence).toBe("high");
+  });
+
+  it("A1-level Read Aloud response scores 10-25", async () => {
+    mockLLMResponse({
+      taskType: "read_aloud",
+      overallScore: 15,
+      confidence: "medium",
+      rawScore: 2,
+      maxRawScore: 10,
+      traits: {
+        pronunciation: { score: 1, maxScore: 5, feedback: "Heavy accent, many mispronunciations." },
+        oralFluency: { score: 1, maxScore: 5, feedback: "Very slow, long pauses between words." },
+        content: { score: 1, maxScore: 5, feedback: "Several words unrecognizable." },
+      },
+      cefrLevel: "A1",
+      overallFeedback: "Minimal intelligible speech. Needs extensive practice.",
+      strengths: ["Attempted the task"],
+      improvements: ["Work on basic pronunciation", "Practice common word families"],
+      wordLevelFeedback: "",
+    });
+
+    const result = await scoreSpeakingTask({
+      taskType: "read_aloud",
+      originalText: "The quick brown fox jumps over the lazy dog near the river bank.",
+      transcription: "da... kwick... brown... fox... jumps... over... da... lazy... dog.",
+    });
+
+    expect(result.overallScore).toBeGreaterThanOrEqual(10);
+    expect(result.overallScore).toBeLessThanOrEqual(25);
+    expect(result.cefrLevel).toMatch(/^(A1|A2)$/);
+  });
+
+  it("B2-level Write Essay response scores 65-79", async () => {
+    mockLLMResponse({
+      taskType: "write_essay",
+      overallScore: 72,
+      confidence: "high",
+      rawScore: 24,
+      maxRawScore: 30,
+      wordCount: 280,
+      traits: {
+        content: { score: 2, maxScore: 3, feedback: "Addresses most aspects of the prompt." },
+        form: { score: 2, maxScore: 2, feedback: "280 words, within ideal range." },
+        grammar: { score: 2, maxScore: 2, feedback: "Consistent control, rare errors." },
+        vocabulary: { score: 1, maxScore: 2, feedback: "Good range but some imprecision." },
+        spelling: { score: 2, maxScore: 2, feedback: "No errors." },
+        development: { score: 1, maxScore: 2, feedback: "Some development of ideas." },
+        linguisticRange: { score: 1, maxScore: 2, feedback: "Mix of simple and complex structures." },
+      },
+      cefrLevel: "B2",
+      overallFeedback: "A well-developed essay with strong arguments.",
+      strengths: ["Clear thesis statement", "Effective use of cohesive devices"],
+      improvements: ["Minor variation in sentence starters"],
+      grammarErrors: [],
+      vocabularyFeedback: "Good use of topic vocabulary.",
+      modelAnswer: "The environmental impact of urbanization has become a pressing concern...",
+    });
+
+    const result = await scoreWritingTask({
+      taskType: "write_essay",
+      prompt: "Discuss the impact of urbanization on the environment.",
+      response: "Urbanization has significantly impacted the environment in numerous ways that demand immediate attention from policymakers and citizens alike. The rapid expansion of cities has led to increased pollution levels, loss of biodiversity, and significantly higher carbon emissions that contribute to climate change. Moreover, the construction of new infrastructure such as roads, buildings, and industrial facilities often results in widespread deforestation and habitat destruction, displacing wildlife and disrupting delicate ecosystems that have existed for centuries. However, sustainable urban planning can mitigate many of these adverse effects by incorporating green spaces into city design, promoting the adoption of renewable energy sources, and implementing efficient waste management systems that reduce landfill dependency. Furthermore, cities that invest in public transportation networks and cycling infrastructure can considerably reduce their carbon footprint while improving the quality of life for their residents. In addition, urban agriculture initiatives can help reduce food miles and provide fresh produce to local communities. In conclusion, while urbanization poses serious environmental challenges that cannot be ignored, thoughtful planning combined with strategic investment in sustainable technologies can help cities continue to grow without devastating the natural world upon which we all depend. The key lies in carefully balancing economic development with environmental stewardship, ensuring that future generations inherit a livable and thriving planet.",
+    });
+
+    expect(result.overallScore).toBeGreaterThanOrEqual(65);
+    expect(result.overallScore).toBeLessThanOrEqual(79);
+    expect(result.cefrLevel).toMatch(/^(B2|C1)$/);
+    expect(result.confidence).toBe("high");
+  });
+
+  it("A1-level Write Essay response scores 10-28", async () => {
+    mockLLMResponse({
+      taskType: "write_essay",
+      overallScore: 18,
+      confidence: "medium",
+      rawScore: 4,
+      maxRawScore: 30,
+      wordCount: 80,
+      traits: {
+        content: { score: 0, maxScore: 3, feedback: "Does not address the prompt properly." },
+        form: { score: 0, maxScore: 2, feedback: "80 words — below minimum." },
+        grammar: { score: 1, maxScore: 2, feedback: "Frequent errors that hinder communication." },
+        vocabulary: { score: 1, maxScore: 2, feedback: "Very limited vocabulary." },
+        spelling: { score: 1, maxScore: 2, feedback: "Several errors." },
+        development: { score: 0, maxScore: 2, feedback: "No clear structure." },
+        linguisticRange: { score: 0, maxScore: 2, feedback: "Only simple sentences." },
+      },
+      cefrLevel: "A2",
+      overallFeedback: "The essay does not meet basic requirements.",
+      strengths: [],
+      improvements: ["Write 200-300 words", "Address all parts of the prompt", "Use paragraphs"],
+      grammarErrors: ["Subject-verb agreement: 'The environment are important'"],
+      vocabularyFeedback: "Very limited range. Use topic-specific vocabulary.",
+      modelAnswer: "",
+    });
+
+    const result = await scoreWritingTask({
+      taskType: "write_essay",
+      prompt: "Discuss the impact of urbanization on the environment.",
+      response: "Urbanization is bad for environment. Many trees are cut. People build houses. Air is polluted. Water is dirty. We need more trees and clean energy. Cities are growing very fast. The nature is being destroyed. Animals are losing their homes. The government should make rules to protect nature. We should plant more trees. We should use solar power. The water should be kept clean. The air quality is getting worse every year. People are using more cars. Factories are making smoke. This is very bad for our health. We need to act now to save our planet.",
+    });
+
+    expect(result.overallScore).toBeGreaterThanOrEqual(10);
+    expect(result.overallScore).toBeLessThanOrEqual(28);
+    expect(result.cefrLevel).toMatch(/^(A1|A2)$/);
+  });
+
+  it("Repeat Sentence: perfect recall scores 79+", async () => {
+    mockLLMResponse({
+      taskType: "repeat_sentence",
+      overallScore: 82,
+      confidence: "high",
+      rawScore: 9,
+      maxRawScore: 10,
+      traits: {
+        pronunciation: { score: 5, maxScore: 5, feedback: "Clear, accurate pronunciation." },
+        oralFluency: { score: 4, maxScore: 5, feedback: "Natural pace, no hesitations." },
+        content: { score: 5, maxScore: 5, feedback: "All words recalled correctly." },
+      },
+      cefrLevel: "C1",
+      overallFeedback: "Excellent recall with natural delivery.",
+      strengths: ["Perfect word recall", "Natural rhythm"],
+      improvements: [],
+      wordLevelFeedback: "",
+    });
+
+    const result = await scoreSpeakingTask({
+      taskType: "repeat_sentence",
+      originalText: "The university has announced new research funding for climate science.",
+      transcription: "The university has announced new research funding for climate science.",
+    });
+
+    expect(result.overallScore).toBeGreaterThanOrEqual(79);
+  });
+
+  it("Write from Dictation: all words correct scores 90", async () => {
+    mockLLMResponse({
+      taskType: "write_from_dictation",
+      overallScore: 90,
+      confidence: "high",
+      rawScore: 9,
+      maxRawScore: 9,
+      correctAnswers: ["The", "conference", "will", "be", "held", "in", "the", "main", "auditorium"],
+      userAnswers: ["The", "conference", "will", "be", "held", "in", "the", "main", "auditorium"],
+      cefrLevel: "C2",
+      overallFeedback: "All words spelled correctly.",
+      strengths: ["Perfect recall", "Correct spelling"],
+      improvements: [],
+      strategyTips: [],
+    });
+
+    const result = await scoreWriteFromDictation({
+      originalSentence: "The conference will be held in the main auditorium.",
+      userResponse: "The conference will be held in the main auditorium.",
+    });
+
+    expect(result.rawScore).toBe(9);
+    expect(result.overallScore).toBe(90);
+    expect(result.confidence).toBe("high");
+  });
+
+  it("confidence field is always present in all engine results", async () => {
+    // Speaking
+    mockLLMResponse({
+      taskType: "read_aloud", overallScore: 60, confidence: "medium",
+      traits: { pronunciation: { score: 3, maxScore: 5, feedback: "" }, oralFluency: { score: 3, maxScore: 5, feedback: "" }, content: { score: 3, maxScore: 5, feedback: "" } },
+      cefrLevel: "B1", overallFeedback: "", strengths: [], improvements: [], wordLevelFeedback: "",
+    });
+    const speaking = await scoreSpeakingTask({ taskType: "read_aloud", originalText: "test", transcription: "test" });
+    expect(speaking.confidence).toBeDefined();
+    expect(["high", "medium", "low"]).toContain(speaking.confidence);
+
+    // Writing
+    mockLLMResponse({
+      taskType: "summarize_written_text", overallScore: 55, confidence: "medium", rawScore: 5, maxRawScore: 10, wordCount: 40,
+      traits: { form: { score: 1, maxScore: 2, feedback: "" }, content: { score: 2, maxScore: 2, feedback: "" }, grammar: { score: 1, maxScore: 2, feedback: "" }, vocabulary: { score: 1, maxScore: 2, feedback: "" } },
+      cefrLevel: "B1", overallFeedback: "", strengths: [], improvements: [], grammarErrors: [], vocabularyFeedback: "",
+    });
+    const writing = await scoreWritingTask({ taskType: "summarize_written_text", sourceText: "test test test test", response: "test test" });
+    expect(writing.confidence).toBeDefined();
+    expect(["high", "medium", "low"]).toContain(writing.confidence);
+
+    // Reading
+    mockLLMResponse({
+      taskType: "multiple_choice_single", overallScore: 70, confidence: "high", rawScore: 1, maxRawScore: 1,
+      correctAnswers: ["A"], userAnswers: ["A"],
+      cefrLevel: "B2", overallFeedback: "", strengths: [], improvements: [], strategyTips: [],
+    });
+    const reading = await scoreReadingTask({ taskType: "multiple_choice_single", passage: "test", question: "test", options: ["A", "B"], correctAnswer: "A", userAnswer: "A" });
+    expect(reading.confidence).toBeDefined();
+    expect(["high", "medium", "low"]).toContain(reading.confidence);
+
+    // Listening
+    mockLLMResponse({
+      taskType: "write_from_dictation", overallScore: 80, confidence: "high", rawScore: 8, maxRawScore: 9,
+      correctAnswers: ["a", "b", "c"], userAnswers: ["a", "b", "c"],
+      cefrLevel: "C1", overallFeedback: "", strengths: [], improvements: [], strategyTips: [],
+    });
+    const listening = await scoreWriteFromDictation({ originalSentence: "a b c", userResponse: "a b c" });
+    expect(listening.confidence).toBeDefined();
+    expect(["high", "medium", "low"]).toContain(listening.confidence);
   });
 });

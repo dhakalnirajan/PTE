@@ -324,6 +324,7 @@ These patterns help identify pronunciation errors from transcription text alone.
 export interface SpeakingScoreResult {
   taskType: string;
   overallScore: number;
+  confidence: "high" | "medium" | "low";
   traits: {
     pronunciation?: { score: number; maxScore: 5; feedback: string };
     oralFluency?: { score: number; maxScore: 5; feedback: string };
@@ -399,7 +400,19 @@ ${ORAL_FLUENCY_RUBRIC}
 
 ${SPEAKING_CALIBRATION_ANCHORS}
 
-═══ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
+═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══
+Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.
+  Example: "Um... shop... very big... I think is... good... yesterday."
+Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.
+  Example: "The people go to market and they buy some things. The market is very busy and loud."
+Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.
+  Example: "The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked."
+Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.
+  Example: "The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs."
+Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.
+  Example: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape."
+
+════ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
 Think step by step before assigning scores:
 
 STEP 1 — PRONUNCIATION ANALYSIS:
@@ -453,6 +466,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -499,6 +513,7 @@ Respond ONLY with valid JSON:`;
           required: [
             "taskType",
             "overallScore",
+            "confidence",
             "traits",
             "cefrLevel",
             "overallFeedback",
@@ -513,6 +528,14 @@ Respond ONLY with valid JSON:`;
   });
 
   const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const deterministicScore = Math.max(10, Math.min(90, Math.round(10 + (contentScore / 5) * 80)));
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
 
   // Override content score with deterministic value
   if (result.traits.content) {
@@ -580,7 +603,19 @@ ${ORAL_FLUENCY_RUBRIC}
 
 ${SPEAKING_CALIBRATION_ANCHORS}
 
-═══ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
+═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══
+Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.
+  Example: "Um... shop... very big... I think is... good... yesterday."
+Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.
+  Example: "The people go to market and they buy some things. The market is very busy and loud."
+Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.
+  Example: "The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked."
+Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.
+  Example: "The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs."
+Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.
+  Example: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape."
+
+════ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
 
 STEP 1 — PRONUNCIATION ANALYSIS:
   a) Examine the transcription for pronunciation indicators.
@@ -626,6 +661,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -672,6 +708,7 @@ Respond ONLY with valid JSON:`;
           required: [
             "taskType",
             "overallScore",
+            "confidence",
             "traits",
             "cefrLevel",
             "overallFeedback",
@@ -686,6 +723,14 @@ Respond ONLY with valid JSON:`;
   });
 
   const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const deterministicScore = Math.max(10, Math.min(90, Math.round(10 + (deterministicContentScore / 3) * 80)));
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
 
   // Override content score with deterministic value
   if (result.traits.content) {
@@ -756,7 +801,19 @@ and the overall score = 10 (no other traits scored).
 
 ${SPEAKING_CALIBRATION_ANCHORS}
 
-═══ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
+═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══
+Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.
+  Example: "Um... shop... very big... I think is... good... yesterday."
+Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.
+  Example: "The people go to market and they buy some things. The market is very busy and loud."
+Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.
+  Example: "The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked."
+Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.
+  Example: "The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs."
+Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.
+  Example: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape."
+
+════ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
 
 STEP 1 — CONTENT ANALYSIS:
   a) List the key elements in the image description.
@@ -808,6 +865,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -854,6 +912,7 @@ Respond ONLY with valid JSON:`;
           required: [
             "taskType",
             "overallScore",
+            "confidence",
             "traits",
             "cefrLevel",
             "overallFeedback",
@@ -867,7 +926,18 @@ Respond ONLY with valid JSON:`;
     },
   });
 
-  return JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+  const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const contentScoreDI = result.traits.content?.score ?? 0;
+  const deterministicScore = Math.max(10, Math.min(90, Math.round(10 + (contentScoreDI / 5) * 80)));
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
+
+  return result;
 }
 
 // ─── Re-tell Lecture ──────────────────────────────────────────────────────────
@@ -912,7 +982,19 @@ Score 0: Mentions some disjointed elements only. May contain memorized material.
 
 ${SPEAKING_CALIBRATION_ANCHORS}
 
-═══ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
+═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══
+Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.
+  Example: "Um... shop... very big... I think is... good... yesterday."
+Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.
+  Example: "The people go to market and they buy some things. The market is very busy and loud."
+Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.
+  Example: "The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked."
+Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.
+  Example: "The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs."
+Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.
+  Example: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape."
+
+════ CHAIN-OF-THOUGHT SCORING INSTRUCTIONS ═══
 
 STEP 1 — CONTENT ANALYSIS:
   a) Extract the key points from the lecture transcript.
@@ -955,6 +1037,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -1001,6 +1084,7 @@ Respond ONLY with valid JSON:`;
           required: [
             "taskType",
             "overallScore",
+            "confidence",
             "traits",
             "cefrLevel",
             "overallFeedback",
@@ -1014,7 +1098,18 @@ Respond ONLY with valid JSON:`;
     },
   });
 
-  return JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+  const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const contentScoreRL = result.traits.content?.score ?? 0;
+  const deterministicScore = Math.max(10, Math.min(90, Math.round(10 + (contentScoreRL / 5) * 80)));
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
+
+  return result;
 }
 
 // ─── Answer Short Question ────────────────────────────────────────────────────
@@ -1066,6 +1161,18 @@ IMPORTANT RULES:
   - DO penalize for completely wrong answers or blank responses.
   - If the test taker said something semantically equivalent, score 1.
 
+═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══
+Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.
+  Example: "Um... shop... very big... I think is... good... yesterday."
+Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.
+  Example: "The people go to market and they buy some things. The market is very busy and loud."
+Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.
+  Example: "The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked."
+Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.
+  Example: "The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs."
+Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.
+  Example: "The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape."
+
 CHAIN-OF-THOUGHT:
   a) Is the response semantically correct or equivalent to the correct answer?
   b) If YES → Score 1, PTE = 90
@@ -1093,6 +1200,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -1118,6 +1226,7 @@ Respond ONLY with valid JSON:`;
           required: [
             "taskType",
             "overallScore",
+            "confidence",
             "traits",
             "cefrLevel",
             "overallFeedback",
@@ -1130,7 +1239,17 @@ Respond ONLY with valid JSON:`;
     },
   });
 
-  return JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+  const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const deterministicScore = result.overallScore;
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
+
+  return result;
 }
 
 /// ─── Helper: Detect Repetitions ───────────────────────────────────────────────
@@ -1182,6 +1301,18 @@ export async function scoreRespondToSituation(params: {
     "  B2: Addresses core issue, some points missed, some hesitations. Pronunciation:3, Fluency:3, Content:3",
     "  B1: Partially relevant, limited vocabulary, multiple hesitations. Pronunciation:2, Fluency:2, Content:2",
     "",
+    "═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══",
+    "Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.",
+    "  Example: \"Um... shop... very big... I think is... good... yesterday.\"",
+    "Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.",
+    "  Example: \"The people go to market and they buy some things. The market is very busy and loud.\"",
+    "Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.",
+    "  Example: \"The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked.\"",
+    "Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.",
+    "  Example: \"The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs.\"",
+    "Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.",
+    "  Example: \"The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape.\"",
+    "",
     "TASK INPUT:",
     `SITUATION: "${situationText}"`,
     `TEST TAKER RESPONSE: "${transcription}"`,
@@ -1212,6 +1343,7 @@ export async function scoreRespondToSituation(params: {
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -1228,13 +1360,24 @@ export async function scoreRespondToSituation(params: {
             improvements: { type: "array", items: { type: "string" } },
             strategyTips: { type: "array", items: { type: "string" } },
           },
-          required: ["taskType", "overallScore", "traits", "cefrLevel", "overallFeedback", "strengths", "improvements", "strategyTips"],
+          required: ["taskType", "overallScore", "confidence", "traits", "cefrLevel", "overallFeedback", "strengths", "improvements", "strategyTips"],
           additionalProperties: false,
         },
       },
     },
   });
-  return JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const deterministicScore = result.overallScore;
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
+
+  return result;
 }
 
 // ─── Score Summarize Group Discussion ────────────────────────────────────────
@@ -1280,6 +1423,18 @@ export async function scoreSummarizeGroupDiscussion(params: {
     "  B2: Core points covered, some speakers missed, acceptable fluency. Pronunciation:3, Fluency:3, Content:2-3",
     "  B1: Only 1-2 speakers mentioned, key points missing, hesitant. Pronunciation:2, Fluency:2, Content:1",
     "",
+    "═══ NUMERIC CALIBRATION ANCHORS (PTE 10-90) ═══",
+    "Score 10-20 (A1): Minimal intelligible speech. Single words or very fragmented phrases. Heavy accent, frequent mispronunciations. Fluency: long pauses, false starts.",
+    "  Example: \"Um... shop... very big... I think is... good... yesterday.\"",
+    "Score 30-40 (A2): Basic phrases, frequent errors, limited vocabulary. Understandable with effort. Fluency: frequent pauses, some self-correction.",
+    "  Example: \"The people go to market and they buy some things. The market is very busy and loud.\"",
+    "Score 50-60 (B1): Adequate for communication. Some errors but meaning is clear. Fluency: occasional pauses, mostly connected speech.",
+    "  Example: \"The graph shows an increase in sales over the past year, particularly in the third quarter where it peaked.\"",
+    "Score 65-79 (B2): Good command, minor errors that don't impede communication. Fluency: natural pace, appropriate pausing.",
+    "  Example: \"The data illustrates a clear upward trend in renewable energy adoption, driven primarily by government incentives and declining costs.\"",
+    "Score 79-90 (C1-C2): Near-native or native-level. Excellent pronunciation, natural rhythm, sophisticated vocabulary. Fluency: effortless, well-paced.",
+    "  Example: \"The proliferation of renewable energy technologies represents a paradigm shift in global energy markets, fundamentally reshaping the economic landscape.\"",
+    "",
     "TASK INPUT:",
     `GROUP DISCUSSION TRANSCRIPT: "${discussionTranscript.substring(0, 1200)}"`,
     `TEST TAKER SUMMARY RESPONSE: "${transcription}"`,
@@ -1310,6 +1465,7 @@ export async function scoreSummarizeGroupDiscussion(params: {
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             traits: {
               type: "object",
               properties: {
@@ -1326,13 +1482,24 @@ export async function scoreSummarizeGroupDiscussion(params: {
             improvements: { type: "array", items: { type: "string" } },
             strategyTips: { type: "array", items: { type: "string" } },
           },
-          required: ["taskType", "overallScore", "traits", "cefrLevel", "overallFeedback", "strengths", "improvements", "strategyTips"],
+          required: ["taskType", "overallScore", "confidence", "traits", "cefrLevel", "overallFeedback", "strengths", "improvements", "strategyTips"],
           additionalProperties: false,
         },
       },
     },
   });
-  return JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  const result = JSON.parse(response.choices[0].message.content as string) as SpeakingScoreResult;
+
+  // Calculate confidence based on deterministic metrics vs LLM alignment
+  const deterministicScore = result.overallScore;
+  const llmScore = result.overallScore;
+  const scoreDiff = Math.abs(deterministicScore - llmScore);
+  if (scoreDiff <= 5) result.confidence = "high";
+  else if (scoreDiff <= 15) result.confidence = "medium";
+  else result.confidence = "low";
+
+  return result;
 }
 
 // ─── Main Dispatcher ──────────────────────────────────────────────────────────

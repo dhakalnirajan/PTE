@@ -286,6 +286,7 @@ SELECT MISSING WORD:
 export interface ListeningScoreResult {
   taskType: string;
   overallScore: number;
+  confidence: "high" | "medium" | "low";
   rawScore: number;
   maxRawScore: number;
   correctAnswers?: string[];
@@ -314,6 +315,7 @@ const BASE_LISTENING_SCHEMA = {
   properties: {
     taskType: { type: "string" as const },
     overallScore: { type: "integer" as const },
+    confidence: { type: "string" as const, enum: ["high", "medium", "low"] as const },
     rawScore: { type: "integer" as const },
     maxRawScore: { type: "integer" as const },
     correctAnswers: { type: "array" as const, items: { type: "string" as const } },
@@ -325,7 +327,7 @@ const BASE_LISTENING_SCHEMA = {
     strategyTips: { type: "array" as const, items: { type: "string" as const } },
   },
   required: [
-    "taskType", "overallScore", "rawScore", "maxRawScore",
+    "taskType", "overallScore", "confidence", "rawScore", "maxRawScore",
     "correctAnswers", "userAnswers", "cefrLevel",
     "overallFeedback", "strengths", "improvements", "strategyTips",
   ] as string[],
@@ -511,6 +513,7 @@ Respond ONLY with valid JSON:`;
   result.overallScore = Math.max(10, Math.min(90, Math.round(10 + (rawScore / 10) * 80)));
   result.cefrLevel = computeCEFR(result.overallScore);
   result.wordCount = wordCount;
+  result.confidence = "medium";
 
   return result;
 }
@@ -610,6 +613,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = [originalSentence];
   result.userAnswers = [userResponse];
+  result.confidence = "high";
 
   // Add word-level analysis
   result.wordAnalysis = wordResults.map((w) => ({
@@ -708,6 +712,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = [correctSummary];
   result.userAnswers = [userSummary];
+  result.confidence = "medium";
 
   return result;
 }
@@ -799,6 +804,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = blanks.map((b) => b.correctWord);
   result.userAnswers = blanks.map((b) => b.userWord);
+  result.confidence = "high";
 
   return result;
 }
@@ -861,6 +867,7 @@ export async function scoreListeningTask(params: {
       return {
         taskType,
         overallScore: pteScore,
+        confidence: "high",
         rawScore: isCorrect ? 1 : 0,
         maxRawScore: 1,
         correctAnswers: [correctAns],
@@ -905,6 +912,7 @@ export async function scoreListeningTask(params: {
       return {
         taskType,
         overallScore: pteScore,
+        confidence: "high",
         rawScore,
         maxRawScore: correctAnswers.length,
         correctAnswers,

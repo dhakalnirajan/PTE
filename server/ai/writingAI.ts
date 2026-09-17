@@ -291,6 +291,7 @@ A2 Level (PTE 29-42):
 export interface WritingScoreResult {
   taskType: string;
   overallScore: number;
+  confidence: "high" | "medium" | "low";
   rawScore: number;
   maxRawScore: number;
   traits: {
@@ -354,6 +355,7 @@ DETERMINISTIC PRE-COMPUTED METRICS (computed by TypeScript, NOT to be overridden
     return {
       taskType: "summarize_written_text",
       overallScore: 10,
+      confidence: "medium",
       rawScore: 0,
       maxRawScore: 8,
       wordCount,
@@ -442,6 +444,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             rawScore: { type: "integer" },
             maxRawScore: { type: "integer" },
             wordCount: { type: "integer" },
@@ -485,7 +488,7 @@ Respond ONLY with valid JSON:`;
             modelAnswer: { type: "string" },
           },
           required: [
-            "taskType", "overallScore", "rawScore", "maxRawScore", "wordCount",
+            "taskType", "overallScore", "confidence", "rawScore", "maxRawScore", "wordCount",
             "traits", "cefrLevel", "overallFeedback", "strengths", "improvements",
             "grammarErrors", "vocabularyFeedback", "modelAnswer",
           ],
@@ -512,6 +515,15 @@ Respond ONLY with valid JSON:`;
   result.rawScore = rawScore;
   result.overallScore = Math.round(10 + (rawScore / 8) * 80);
   result.overallScore = Math.max(10, Math.min(90, result.overallScore));
+
+  // Confidence: deterministic vs LLM alignment
+  const spellingScoreSWT = spellingCheck.count === 0 ? 2 : spellingCheck.count === 1 ? 1 : 0;
+  const deterministicScore = formScore + spellingScoreSWT;
+  const llmContentScore = result.traits?.content?.score ?? 0;
+  const alignmentRatio = deterministicScore / 4;
+  if (alignmentRatio >= 0.75 && llmContentScore >= 2) result.confidence = "high";
+  else if (alignmentRatio >= 0.5 || llmContentScore >= 1) result.confidence = "medium";
+  else result.confidence = "low";
 
   return result;
 }
@@ -576,6 +588,7 @@ DETERMINISTIC PRE-COMPUTED METRICS (computed by TypeScript, NOT to be overridden
     return {
       taskType: "write_essay",
       overallScore: 10,
+      confidence: "medium",
       rawScore: 0,
       maxRawScore: 15,
       wordCount,
@@ -631,7 +644,9 @@ STEP 2 — DEVELOPMENT, STRUCTURE AND COHERENCE:
   b) Are paragraphs well-organized with topic sentences?
   c) Are transitions used effectively? (detected: ${transitionCount})
   d) Is the argument logically developed?
-  e) Assign DSC score: 2 (good development), 1 (some weak links), 0 (lacks coherence).
+  e) Identify cohesion devices used: addition (moreover, furthermore, in addition), contrast (however, nevertheless, on the other hand), cause-effect (therefore, consequently, as a result), exemplification (for instance, such as, to illustrate), sequencing (firstly, secondly, finally).
+  f) Are cohesive ties within and between paragraphs appropriate?
+  g) Assign DSC score: 2 (good development, effective cohesion devices, logical flow), 1 (some weak links, limited cohesion), 0 (lacks coherence, no discernible structure).
 
 STEP 3 — GRAMMAR ANALYSIS:
   a) Identify specific grammatical errors (subject-verb agreement, tense, articles, prepositions).
@@ -645,9 +660,11 @@ STEP 4 — GENERAL LINGUISTIC RANGE:
   c) Assign GLR score: 2 (mastery, no restrictions), 1 (sufficient range), 0 (mainly basic).
 
 STEP 5 — VOCABULARY RANGE:
-  a) Is academic vocabulary used appropriately?
-  b) Are there inappropriate word choices or circumlocution?
-  c) Assign vocabulary score: 2 (broad repertoire), 1 (good range, some imprecision), 0 (mainly basic).
+  a) Is academic vocabulary used appropriately? (check against Academic Word List: analyse, approach, area, assess, assume, authority, available, benefit, concept, consist, constitute, context, etc.)
+  b) Are collocations natural? (e.g., "make a decision" not "do a decision", "conduct research" not "make research")
+  c) Is there lexical diversity or is the same vocabulary repeated?
+  d) Are there inappropriate word choices or circumlocution?
+  e) Assign vocabulary score: 2 (broad academic repertoire, natural collocations), 1 (good range, some imprecision or basic collocations), 0 (mainly basic, inappropriate choices).
 
 STEP 6 — RAW SCORE:
   raw = Content + Form(${formScore}) + DSC + Grammar + GLR + Vocab + Spelling(${spellingScore}) (max 15)
@@ -681,6 +698,7 @@ Respond ONLY with valid JSON:`;
           properties: {
             taskType: { type: "string" },
             overallScore: { type: "integer" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
             rawScore: { type: "integer" },
             maxRawScore: { type: "integer" },
             wordCount: { type: "integer" },
@@ -742,7 +760,7 @@ Respond ONLY with valid JSON:`;
             modelAnswer: { type: "string" },
           },
           required: [
-            "taskType", "overallScore", "rawScore", "maxRawScore", "wordCount",
+            "taskType", "overallScore", "confidence", "rawScore", "maxRawScore", "wordCount",
             "traits", "cefrLevel", "overallFeedback", "strengths", "improvements",
             "grammarErrors", "vocabularyFeedback", "modelAnswer",
           ],
@@ -767,6 +785,14 @@ Respond ONLY with valid JSON:`;
       result.traits.spelling.feedback = `${spellingCheck.count} spelling error(s) detected: ${spellingCheck.examples.join(", ")}.`;
     }
   }
+
+  // Confidence: deterministic vs LLM alignment
+  const deterministicScore = formScore + spellingScore;
+  const llmContentScore = result.traits?.content?.score ?? 0;
+  const alignmentRatio = deterministicScore / 4;
+  if (alignmentRatio >= 0.75 && llmContentScore >= 2) result.confidence = "high";
+  else if (alignmentRatio >= 0.5 || llmContentScore >= 1) result.confidence = "medium";
+  else result.confidence = "low";
 
   // If Content=0, zero out everything
   const contentScore = result.traits.content?.score || 0;

@@ -46,6 +46,7 @@ function fallbackSpeaking(taskType: string): SpeakingScoreResult {
   return {
     taskType,
     overallScore: 50,
+    confidence: "low",
     traits: {
       pronunciation: { score: 3, maxScore: 5, feedback: TIMEOUT_FEEDBACK },
       oralFluency: { score: 3, maxScore: 5, feedback: TIMEOUT_FEEDBACK },
@@ -63,6 +64,7 @@ function fallbackWriting(taskType: string): WritingScoreResult {
   return {
     taskType,
     overallScore: 50,
+    confidence: "low",
     rawScore: 5,
     maxRawScore: 10,
     traits: { content: trait, form: trait, grammar: trait, vocabulary: trait, spelling: trait },
@@ -78,6 +80,7 @@ function fallbackReading(taskType: string, correctAnswers: string[]): ReadingSco
   return {
     taskType,
     overallScore: 50,
+    confidence: "low",
     rawScore: 0,
     maxRawScore: Math.max(correctAnswers.length, 1),
     correctAnswers,
@@ -94,6 +97,7 @@ function fallbackListening(taskType: string): ListeningScoreResult {
   return {
     taskType,
     overallScore: 50,
+    confidence: "low",
     rawScore: 0,
     maxRawScore: 1,
     cefrLevel: "B1",

@@ -141,23 +141,23 @@
 - [x] Describe Image questions updated with Wikimedia Commons chart/graph images
 - [x] 0 TypeScript errors, 70/70 tests passing
 
-## Phase 6 — AI Training & Accuracy Improvements
-- [ ] Read and extract full PTE scoring rubrics from ptescoreguide.pdf and pasted_content.txt
-- [ ] Rebuild scoring.ts with task-specific system prompts using official PTE criteria
-- [ ] Add few-shot calibration examples (anchor responses at 10, 30, 50, 65, 79, 90 score levels)
-- [ ] Add chain-of-thought reasoning: AI explains each criterion before assigning score
-- [ ] Add structured JSON output schema with strict validation for all scoring tasks
-- [ ] Add score confidence field and flag low-confidence responses for human review
-- [ ] Rebuild aiCoach.ts with PTE-aligned diagnostic categories and actionable tips
-- [ ] Add task-specific coaching prompts: Read Aloud, Repeat Sentence, Describe Image, Essay, SWT
-- [ ] Add error pattern recognition: common PTE mistakes per task type
-- [ ] Add model answer generation with quality tiers (band 65, band 79, band 90)
-- [ ] Add pronunciation phoneme analysis prompt for speaking tasks
-- [ ] Add grammar error classification (subject-verb agreement, tense, articles, prepositions)
-- [ ] Add vocabulary sophistication scoring (academic word list, collocations, range)
-- [ ] Add written discourse coherence scoring (cohesive devices, paragraph structure)
-- [ ] Write AI scoring accuracy tests with known-score reference responses
-- [ ] Add score normalization calibration table aligned to PTE 10-90 scale
+## Phase 6 — AI Training & Accuracy Improvements (COMPLETED)
+- [x] Read and extract full PTE scoring rubrics from ptescoreguide.pdf and pasted_content.txt (done in Phase 9-10)
+- [x] Rebuild scoring.ts with task-specific system prompts using official PTE criteria (done in Phase 9-10)
+- [x] Add few-shot calibration examples (anchor responses at 10, 30, 50, 65, 79, 90 score levels) — numeric calibration anchors added to all 7 speaking tasks + writing engines
+- [x] Add chain-of-thought reasoning: AI explains each criterion before assigning score (done in Phase 10)
+- [x] Add structured JSON output schema with strict validation for all scoring tasks (done in Phase 10)
+- [x] Add score confidence field and flag low-confidence responses for human review — confidence: "high"|"medium"|"low" added to all engine result types + JSON schemas; deterministic vs LLM alignment calculation
+- [x] Rebuild aiCoach.ts with PTE-aligned diagnostic categories and actionable tips
+- [x] Add task-specific coaching prompts: Read Aloud, Repeat Sentence, Describe Image, Essay, SWT
+- [x] Add error pattern recognition: common PTE mistakes per task type (done in Phase 10)
+- [x] Add model answer generation with quality tiers (band 65, band 79, band 90) (done in Phase 10)
+- [x] Add pronunciation phoneme analysis prompt for speaking tasks (done in Phase 10)
+- [x] Add grammar error classification (subject-verb agreement, tense, articles, prepositions) (done in Phase 10)
+- [x] Add vocabulary sophistication scoring (academic word list, collocations, range) — enhanced vocabulary prompt with AWL + collocation criteria
+- [x] Add written discourse coherence scoring (cohesive devices, paragraph structure) — enhanced essay STEP 2 with cohesion-device analysis
+- [x] Write AI scoring accuracy tests with known-score reference responses — 7 new tests: C2/A1 Read Aloud, B2/A1 Write Essay, Repeat Sentence, Write from Dictation, confidence field validation
+- [x] Add score normalization calibration table aligned to PTE 10-90 scale (done in Phase 10)
 
 ## Phase 7 — System Audit, Concurrency & Premium Animations
 - [ ] Audit all DB queries for user-scoped WHERE clauses (no data leakage between users)

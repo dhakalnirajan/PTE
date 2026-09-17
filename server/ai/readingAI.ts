@@ -138,6 +138,7 @@ RE-ORDER PARAGRAPHS STRATEGIES:
 export interface ReadingScoreResult {
   taskType: string;
   overallScore: number; // 10-90 PTE scale
+  confidence: "high" | "medium" | "low";
   rawScore: number;
   maxRawScore: number;
   correctAnswers: string[];
@@ -164,6 +165,7 @@ const BASE_READING_SCHEMA = {
   properties: {
     taskType: { type: "string" as const },
     overallScore: { type: "integer" as const },
+    confidence: { type: "string" as const, enum: ["high", "medium", "low"] as const },
     rawScore: { type: "integer" as const },
     maxRawScore: { type: "integer" as const },
     correctAnswers: { type: "array" as const, items: { type: "string" as const } },
@@ -176,7 +178,7 @@ const BASE_READING_SCHEMA = {
     strategyTips: { type: "array" as const, items: { type: "string" as const } },
   },
   required: [
-    "taskType", "overallScore", "rawScore", "maxRawScore",
+    "taskType", "overallScore", "confidence", "rawScore", "maxRawScore",
     "correctAnswers", "userAnswers", "explanation", "cefrLevel",
     "overallFeedback", "strengths", "improvements", "strategyTips",
   ] as string[],
@@ -276,6 +278,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = blanks.map((b) => b.correctAnswer);
   result.userAnswers = blanks.map((b) => b.userAnswer);
+  result.confidence = "high";
 
   // Add blank-level analysis
   result.blankAnalysis = blankResults.map((b, i) => ({
@@ -380,6 +383,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = [correctAnswer];
   result.userAnswers = [userAnswer];
+  result.confidence = "high";
 
   return result;
 }
@@ -484,6 +488,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = correctAnswers;
   result.userAnswers = userAnswers;
+  result.confidence = "high";
 
   return result;
 }
@@ -588,6 +593,7 @@ Respond ONLY with valid JSON:`;
   result.cefrLevel = cefrLevel;
   result.correctAnswers = correctOrder;
   result.userAnswers = userOrder;
+  result.confidence = "high";
 
   return result;
 }
