@@ -383,7 +383,7 @@
 - [x] Add bar charts for score distribution and task type performance
 - [x] Add pie charts for subscription breakdown and payment method distribution
 - [ ] Implement date range filtering — 7/30/90 day presets work, custom range still missing
-- [ ] Add CSV/PDF export functionality for reports
+- [ ] Add CSV/PDF export functionality for reports (CSV export exists in AdminUserManagement — users list; reports/PDF not yet)
 - [ ] Test all analytics features end-to-end
 
 
