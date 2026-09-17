@@ -3,6 +3,7 @@ import { createServer } from "http";
 import net from "net";
 import { createApp } from "./app";
 import { serveStatic, setupVite } from "./vite";
+import { runSubscriptionLifecycle } from "../jobs/subscriptionJobs";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -42,6 +43,16 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+
+    // On the long-running Node server, run the subscription lifecycle job every
+    // 6 hours. (On Vercel the same job runs via the crons entry in vercel.json.)
+    const SUBSCRIPTION_JOB_INTERVAL_MS = 6 * 60 * 60 * 1000;
+    const runJob = () =>
+      runSubscriptionLifecycle().catch((error) =>
+        console.error("[Jobs] Subscription lifecycle failed:", error)
+      );
+    const jobTimer = setInterval(runJob, SUBSCRIPTION_JOB_INTERVAL_MS);
+    jobTimer.unref?.();
   });
 }
 

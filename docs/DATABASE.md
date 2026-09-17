@@ -36,7 +36,7 @@ respond. Indexes created in `supabase_init.sql`:
 | `payment_gateway` | `esewa`, `khalti` |
 | `payment_status` | `pending`, `completed`, `failed`, `refunded` |
 
-## Tables (11)
+## Tables (15)
 
 ### `users`
 | Column | Type | Default |
@@ -52,6 +52,8 @@ respond. Indexes created in `supabase_init.sql`:
 | currentLevel | current_level | `intermediate` |
 | dailyGoalMinutes | int | `30` |
 | notificationsEnabled | boolean | `true` |
+| isBanned | boolean | `false` |
+| bannedAt / banReason | timestamptz / text | ban audit trail written by `adminDb.setUserBan` |
 
 ### `questions`
 | Column | Type |
@@ -138,6 +140,33 @@ id, userId→users, milestoneType (varchar(64) NOT NULL),
 title (varchar(255) NOT NULL), description (text),
 achievedAt (now), isNotified (boolean false)
 
+### `system_config` — admin key/value settings
+id, key (varchar(128) NOT NULL UNIQUE), value (json NOT NULL),
+updatedBy→users, createdAt / updatedAt (now). Read and written by
+`systemAdmin.getSystemConfig` / `updateSystemConfig`.
+
+### `system_backups` — admin backup log
+id, backupId (varchar(64) NOT NULL UNIQUE), status (varchar(32) `completed`),
+sizeBytes (int 0), durationMs (int 0), notes (text),
+snapshot (json — per-table row counts captured at backup time),
+triggeredBy→users, createdAt (now)
+
+### `system_alerts` — derived alerts + acknowledgement state
+id, alertKey (varchar(128) NOT NULL UNIQUE — e.g. `payments.failed.24h`),
+severity (varchar(16) `info`), title (varchar(255)), message (text),
+source (varchar(64) `system`), acknowledged (boolean `false`),
+acknowledgedBy→users, acknowledgedAt, createdAt / updatedAt (now).
+Rendered by `systemAdmin.getSystemAlerts`; `alertKey` is the stable identity that
+lets `acknowledgeAlert` / `reopenAlert` survive re-derivation.
+
+### `api_keys` — hashed secret store
+id, name (varchar(128) NOT NULL), keyPrefix (varchar(24)),
+keyLast4 (varchar(8)), secretHash (varchar(128) — sha256 of the secret),
+status (varchar(16) `active` | `revoked`), createdBy→users,
+lastUsedAt / createdAt / rotatedAt / revokedAt (timestamptz).
+The plaintext secret is returned once by `createApiKey` / `rotateApiKey`; reads
+only ever return the masked form.
+
 ## Migrations
 
 - `drizzle/migrations/{0000,0001,0002,0003}_*.sql` + `drizzle/meta/` — MySQL
@@ -145,6 +174,10 @@ achievedAt (now), isNotified (boolean false)
   - 0000: users · 0001: questions, sessions, targets, responses, milestones ·
     0002: srs_cards, srs_review_logs · 0003: payments, subscription_plans,
     subscriptions.
+- `drizzle/0004_admin_crud.sql` — PostgreSQL: `users.isBanned/bannedAt/
+  banReason` + `system_config` (admin user management & settings).
+- `drizzle/0005_system_ops.sql` — PostgreSQL: `system_backups`, `system_alerts`,
+  `api_keys` (admin system-ops CRUD).
 - `drizzle/supabase_init.sql` — current hand-written PostgreSQL bootstrap
   (run in Supabase SQL Editor). Uses `jsonb` + `double precision`, adds the 3
   indexes above.

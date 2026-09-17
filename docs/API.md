@@ -95,32 +95,53 @@ appRouter = {
 | Procedure | Tier | Input → Output |
 |---|---|---|
 | `payment.getPlans` | public | → `SubscriptionPlan[]` |
-| `payment.initiateESewaPayment` | protected | `{ planId, productName, productDescription }` → `{ paymentUrl, referenceId, paymentId: 0 }` |
+| `payment.initiateESewaPayment` | protected | `{ planId, productName, productDescription }` → `{ paymentUrl, referenceId, paymentId }` (real payments row; `planId` + product code stored in metadata) |
 | `payment.verifyESewaPayment` | protected | `{ transactionCode }` |
-| `payment.initiateKhaltiPayment` | protected | `{ planId, productName, productDescription, amount, customerEmail, customerPhone }` → `{ pidx, paymentUrl, referenceId }` |
+| `payment.initiateKhaltiPayment` | protected | `{ planId, productName, productDescription, amount, customerEmail, customerPhone }` → `{ pidx, paymentUrl, referenceId, paymentId }` |
 | `payment.verifyKhaltiPayment` | protected | `{ pidx, transactionId, amount }` |
 | `payment.getPaymentHistory` | protected | → user payments (20) |
 | `payment.getActiveSubscription` | protected | → subscription + plan |
-| `payment.cancelSubscription` | protected | `{ subscriptionId }` (ownership-checked) |
+| `payment.getSubscriptionHistory` | protected | → every subscription for the user (active + past), each with its plan |
+| `payment.setAutoRenew` | protected | `{ subscriptionId, autoRenew }` (ownership-checked, active only) |
+| `payment.changePlan` | protected | `{ subscriptionId, planId }` → switches plan, starts a fresh monthly/yearly period |
+| `payment.reactivateSubscription` | protected | `{ subscriptionId }` → clears `canceledAt`, sets a new period end |
+| `payment.cancelSubscription` | protected | `{ subscriptionId }` (ownership-checked; emails the confirmation) |
 
 ### systemAdmin (admin only)
+
+Every procedure below reads or writes the real database — none return canned
+placeholder data.
+
 | Procedure | Input → Output |
 |---|---|
-| `systemAdmin.getSystemHealth` | mock health metrics |
-| `systemAdmin.getSystemStats` | real stats (`adminDb.getSystemStatistics`) |
-| `systemAdmin.getActivityLogs` | `{ limit = 50, offset = 0, filter? }` |
-| `systemAdmin.toggleUserBan` | `{ userId, reason? }` (log-only) |
-| `systemAdmin.updateSystemConfig` | `{ key, value }` (log-only) |
-| `systemAdmin.triggerBackup` / `getBackupHistory` | mock |
-| `systemAdmin.getApiKeys` / `rotateApiKey` | mock |
+| `systemAdmin.getSystemHealth` | live database probe + integration credential check → `{ status, database, services[], configuredIntegrations }` |
+| `systemAdmin.getSystemStats` | `{ totalUsers, activeUsers (signed in ≤30d), totalSessions, totalRevenue, activeSubscriptions, failedPayments, failedPayments7d, pendingPayments, responsesScored }` |
+| `systemAdmin.getContentStats` | question bank size per section (`{ total, sections[] }`) |
+| `systemAdmin.getActivityLogs` | `{ limit = 50, offset = 0, filter? }` → real session/response activity |
+| `systemAdmin.getUsers` | `{ limit 1..200, offset, search? }` → `{ users[], total, hasMore }` (search on name/email) |
+| `systemAdmin.toggleUserBan` | `{ userId, reason? }` → persists `isBanned`/`bannedAt`/`banReason` |
+| `systemAdmin.setUserBan` | `{ userId, banned, reason? }` → explicit ban/unban (refuses self-ban) |
+| `systemAdmin.setUserRole` | `{ userId, role: "user" \| "admin" }` → persists role (refuses self-demotion) |
+| `systemAdmin.getRecentPayments` | `{ limit = 10, offset }` → payments joined with user |
+| `systemAdmin.getSystemConfig` | → persisted `system_config` rows |
+| `systemAdmin.updateSystemConfig` | `{ key, value }` → upsert into `system_config` |
+| `systemAdmin.triggerBackup` | `{ notes? }` → captures a row-count snapshot, inserts a `system_backups` row, returns its size/duration |
+| `systemAdmin.getBackupHistory` | → `system_backups` rows, newest first |
+| `systemAdmin.deleteBackup` | `{ id }` → deletes the backup record |
+| `systemAdmin.getApiKeys` | → `api_keys` rows, secrets masked (hash never returned) |
+| `systemAdmin.createApiKey` | `{ name }` → new key; plaintext `secret` returned once |
+| `systemAdmin.rotateApiKey` | `{ id }` → new secret, previous one invalidated (plaintext returned once) |
+| `systemAdmin.revokeApiKey` | `{ id }` → `status = "revoked"`, keeps the audit row |
+| `systemAdmin.deleteApiKey` | `{ id }` → permanently removes the key record |
 | `systemAdmin.getUserEngagement` | `{ days = 30 }` |
 | `systemAdmin.getLearningPerformance` | metrics |
 | `systemAdmin.getPaymentRevenue` | metrics |
 | `systemAdmin.getCustomerLTV` | LTV + top customers |
 | `systemAdmin.getChurnRetention` | `{ days = 30 }` |
-| `systemAdmin.getSystemAlerts` | mock alerts |
-| `systemAdmin.acknowledgeAlert` | mock |
-| `systemAdmin.getPerformanceMetrics` | mock |
+| `systemAdmin.getSystemAlerts` | alerts derived from real signals (failed/stale payments, expiring subscriptions, banned accounts, unconfigured integrations), synced into `system_alerts` |
+| `systemAdmin.acknowledgeAlert` | `{ alertKey }` → persists acknowledgement |
+| `systemAdmin.reopenAlert` | `{ alertKey }` → clears the acknowledgement |
+| `systemAdmin.getPerformanceMetrics` | measured database latency, 24h active users/sessions/responses, 7d payment-failure rate, heap used, process uptime |
 
 ## REST Routes (non-tRPC)
 
@@ -129,6 +150,10 @@ appRouter = {
 | `/api/auth/session` | POST | — | body `{ access_token }` → verifies Supabase token, upserts user, sets `app_session_id` cookie |
 | `/api/oauth/callback` | GET | — | legacy 302 → `/login` |
 | `/api/upload-audio` | POST | session required (401) | raw audio body (`audio/*`, ≤10 MB) → Supabase Storage `audio/user-{userId}/{nanoid()}.webm` → `{ url, key }` |
+| `/api/webhooks/payment/esewa` | POST | gateway | eSewa callback → verifies, marks the payment completed, fulfils it (subscription + receipt). Mounted from `server/_core/app.ts`. |
+| `/api/webhooks/payment/khalti` | POST | gateway (optional HMAC) | Khalti callback → same fulfilment path |
+| `/api/webhooks/payment/khalti/verify` | POST | gateway | Khalti redirect verification → same fulfilment path |
+| `/api/cron/subscriptions` | POST | `x-vercel-cron` header (Vercel Cron) or `Authorization: Bearer {CRON_SECRET}` (401 otherwise) | runs the subscription lifecycle job: renewal reminders (3-day window, idempotent per period) + auto-renewal/expiry → `{ success, summary: { remindersSent, remindersSkipped, renewed, expired, errors[] } }` |
 | `/api/trpc` | POST | per-procedure | tRPC middleware |
 
 ## External API Calls (server-initiated)
@@ -145,6 +170,11 @@ appRouter = {
 - **Khalti** — `POST /api/v2/epayment/initiate/` + `/api/v2/epayment/lookup/`
   (test host `a.khalti.com`, headers `Key {public/secretKey}`).
 - **Owner webhook** — `POST {OWNER_NOTIFICATION_WEBHOOK}` (notification.ts).
+- **Resend email** — `POST https://api.resend.com/emails` with `Authorization: Bearer {RESEND_API_KEY}`,
+  `from` = `SENDER_NAME <SENDER_EMAIL>`. Used for payment receipts,
+  subscription welcome mail, and cancellation confirmations. When
+  `RESEND_API_KEY` is unset, `sendEmail` logs the skip and returns
+  `{ success: false, error: "email_not_configured" }` instead of pretending to send.
 
 ## Error Convention
 

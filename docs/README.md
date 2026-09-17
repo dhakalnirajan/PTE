@@ -35,7 +35,7 @@ Khalti) and an admin/system control panel.
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System overview, layers, data flow, directory layout |
 | [SETUP.md](SETUP.md) | Local development, Supabase setup, Vercel deployment, env vars |
-| [DATABASE.md](DATABASE.md) | Full schema: all 11 tables, 16 enums, migrations, seed scripts |
+| [DATABASE.md](DATABASE.md) | Full schema: all 15 tables, 16 enums, migrations, seed scripts |
 | [SERVER.md](SERVER.md) | Server internals: entry points, core infra, tRPC routers, AI engines, scoring, SM-2, payments, admin |
 | [CLIENT.md](CLIENT.md) | Client internals: bootstrap, routing, pages, components, hooks, test coverage of UI |
 | [TESTING.md](TESTING.md) | All 84 tests: files, cases, coverage, commands, mocking strategy |
@@ -43,6 +43,7 @@ Khalti) and an admin/system control panel.
 | [ENV.md](ENV.md) | Every environment variable, default, and where it is used |
 | [CONFIG.md](CONFIG.md) | All config/tooling files (tsconfig, vite, drizzle, prettier, vercel, shadcn) |
 | [FEATURES.md](FEATURES.md) | Feature-by-feature breakdown of all implemented phases |
+| [CHANGELOG.md](CHANGELOG.md) | What changed while making every CRUD path real, and what is still open |
 
 ## Quick Facts
 

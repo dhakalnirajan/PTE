@@ -17,6 +17,7 @@ export async function createPayment(data: {
   amount: number;
   description: string;
   referenceId: string;
+  metadata?: Record<string, unknown>;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
@@ -32,7 +33,24 @@ export async function createPayment(data: {
       status: "pending",
       description: data.description,
       referenceId: data.referenceId,
+      metadata: (data.metadata ?? null) as never,
     })
+    .returning();
+
+  return payment;
+}
+
+/**
+ * Link a completed payment to the subscription it paid for
+ */
+export async function attachPaymentToSubscription(paymentId: number, subscriptionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+
+  const [payment] = await db
+    .update(payments)
+    .set({ subscriptionId, updatedAt: new Date() })
+    .where(eq(payments.id, paymentId))
     .returning();
 
   return payment;
@@ -59,7 +77,47 @@ export async function updatePaymentStatus(
   await db.update(payments).set(updateData).where(eq(payments.id, paymentId));
 }
 
+/**
+ * Store the gateway's own payment id (Khalti pidx) on the payment record so
+ * the return redirect and webhook can find it again.
+ */
+export async function setPaymentPidx(paymentId: number, pidx: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+
+  const [payment] = await db
+    .update(payments)
+    .set({
+      metadata: sql`coalesce(${payments.metadata}, '{}'::json) || ${JSON.stringify({ pidx })}::json`,
+      updatedAt: new Date(),
+    })
+    .where(eq(payments.id, paymentId))
+    .returning();
+
+  return payment;
+}
+
+/**
+ * Look up a payment by the gateway's own payment id (Khalti pidx)
+ */
+export async function getPaymentByPidx(pidx: string) {
+  if (!pidx) return undefined;
+
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+
+  const [payment] = await db
+    .select()
+    .from(payments)
+    .where(sql`${payments.metadata}->>'pidx' = ${pidx}`)
+    .limit(1);
+
+  return payment;
+}
+
 export async function getPaymentByReferenceId(referenceId: string) {
+  if (!referenceId) return undefined;
+
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
 
@@ -140,6 +198,22 @@ export async function createSubscription(data: {
   const plan = await getSubscriptionPlanById(data.planId);
   if (!plan) throw new Error("Plan not found");
 
+  // A new purchase replaces the user's current plan: supersede any active
+  // subscription so a user never ends up with several active rows at once.
+  await db
+    .update(subscriptions)
+    .set({
+      status: "canceled",
+      canceledAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(subscriptions.userId, data.userId),
+        eq(subscriptions.status, "active")
+      )
+    );
+
   const startDate = new Date();
   const endDate = new Date();
 
@@ -190,6 +264,57 @@ export async function cancelSubscription(subscriptionId: number) {
       updatedAt: new Date(),
     })
     .where(eq(subscriptions.id, subscriptionId));
+}
+
+/**
+ * Update a subscription's mutable fields
+ */
+export async function updateSubscription(
+  subscriptionId: number,
+  data: {
+    planId?: number;
+    status?: "active" | "inactive" | "canceled" | "expired";
+    autoRenew?: boolean;
+    endDate?: Date;
+    renewalDate?: Date;
+    canceledAt?: Date | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+
+  const [subscription] = await db
+    .update(subscriptions)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(subscriptions.id, subscriptionId))
+    .returning();
+
+  return subscription;
+}
+
+/**
+ * Get every subscription belonging to a user (active and past), newest first,
+ * each joined with its plan so the UI can render name/price/features.
+ */
+export async function getUserSubscriptions(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+
+  const rows = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .orderBy(desc(subscriptions.createdAt));
+
+  if (rows.length === 0) return [];
+
+  const plans = await db.select().from(subscriptionPlans);
+  const planById = new Map(plans.map((plan) => [plan.id, plan]));
+
+  return rows.map((subscription) => ({
+    ...subscription,
+    plan: planById.get(subscription.planId) ?? null,
+  }));
 }
 
 export async function getSubscriptionWithPlan(subscriptionId: number) {

@@ -1,18 +1,19 @@
 /**
  * Payment Webhook Handlers
  * Handles eSewa and Khalti payment confirmations
+ *
+ * Mounted at /api/webhooks/payment (see server/_core/app.ts).
  */
 
 import { Router, Request, Response } from "express";
-import { getDb } from "../db";
 import {
   updatePaymentStatus,
   getPaymentByReferenceId,
-  createSubscription,
-  getUserActiveSubscription,
+  getPaymentByPidx,
 } from "../payment/db";
 import { verifyESewaPayment } from "../payment/esewa";
 import { verifyKhaltiPayment } from "../payment/khalti";
+import { fulfilPayment, type StoredPayment } from "../payment/fulfilment";
 import crypto from "crypto";
 
 const router = Router();
@@ -46,29 +47,21 @@ router.post("/esewa", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Payment verification failed" });
     }
 
-    // Update payment status
-    const payment = await getPaymentByReferenceId(refId as string);
-    if (payment) {
-      await updatePaymentStatus(
-        payment.id,
-        "completed",
-        verification.transactionCode,
-        { esewaVerification: verification }
-      );
+    // Our referenceId travels as eSewa's `pid`; fall back to the transaction uuid.
+    const referenceId =
+      (pid as string) || verification.transactionUuid || verification.transactionCode || "";
+    const payment =
+      (await getPaymentByReferenceId(referenceId)) ??
+      (await getPaymentByReferenceId((refId as string) ?? ""));
 
-      // Create subscription if this is a subscription payment
-      if (payment.subscriptionId === null) {
-        // Extract plan ID from product code (format: PLAN{planId})
-        const planMatch = (pid as string)?.match(/PLAN(\d+)/);
-        if (planMatch) {
-          const planId = parseInt(planMatch[1]);
-          await createSubscription({
-            userId: payment.userId,
-            planId,
-            autoRenew: true,
-          });
-        }
-      }
+    if (payment) {
+      await updatePaymentStatus(payment.id, "completed", verification.transactionCode, {
+        esewaVerification: verification,
+      });
+
+      await fulfilPayment(payment as StoredPayment, { productCode: pid as string });
+    } else {
+      console.error(`[Webhook] eSewa payment ${referenceId} not found in the ledger`);
     }
 
     return res.json({ success: true, message: "Payment confirmed" });
@@ -107,26 +100,17 @@ router.post("/khalti", async (req: Request, res: Response) => {
       return res.json({ success: true, message: "Payment not completed" });
     }
 
-    // Update payment status
-    const payment = await getPaymentByReferenceId(pidx);
-    if (payment) {
-      await updatePaymentStatus(
-        payment.id,
-        "completed",
-        transaction_id,
-        { khaltiWebhook: req.body }
-      );
+    const payment = await getPaymentByPidx(pidx);
 
-      // Create subscription if this is a subscription payment
-      if (payment.subscriptionId === null && payment.gateway === "khalti") {
-        // For now, assume this is a Pro plan subscription
-        // In production, store plan info in payment metadata
-        await createSubscription({
-          userId: payment.userId,
-          planId: 2, // Pro plan
-          autoRenew: true,
-        });
-      }
+    if (payment) {
+      await updatePaymentStatus(payment.id, "completed", transaction_id, {
+        khaltiWebhook: req.body,
+        pidx,
+      });
+
+      await fulfilPayment(payment as StoredPayment);
+    } else {
+      console.error(`[Webhook] Khalti payment ${pidx} not found in the ledger`);
     }
 
     return res.json({ success: true, message: "Payment confirmed" });
@@ -150,31 +134,26 @@ router.post("/khalti/verify", async (req: Request, res: Response) => {
         secretKey: KHALTI_SECRET,
         isProduction: process.env.NODE_ENV === "production",
       },
-      { pidx, transactionId, amount }
+      { pidx, transactionId: transactionId ?? pidx, amount }
     );
 
     if (!verification.success) {
       return res.status(400).json({ success: false, message: "Payment verification failed" });
     }
 
-    // Update payment status
-    const payment = await getPaymentByReferenceId(pidx);
+    const payment = await getPaymentByPidx(pidx);
+
     if (payment) {
       await updatePaymentStatus(
         payment.id,
         "completed",
-        verification.transactionId,
-        { khaltiVerification: verification }
+        verification.transactionId ?? transactionId,
+        { khaltiVerification: verification, pidx }
       );
 
-      // Create subscription
-      if (payment.subscriptionId === null) {
-        await createSubscription({
-          userId: payment.userId,
-          planId: 2, // Pro plan
-          autoRenew: true,
-        });
-      }
+      await fulfilPayment(payment as StoredPayment);
+    } else {
+      console.error(`[Webhook] Khalti payment ${pidx} not found in the ledger`);
     }
 
     return res.json({ success: true, verification });

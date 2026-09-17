@@ -8,6 +8,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as adminDb from "../admin/adminDb";
 import * as analyticsDb from "../admin/analyticsDb";
+import { isEmailConfigured } from "../email/emailService";
 /**
  * Admin-only procedure - checks for super admin role
  */
@@ -25,28 +26,92 @@ export const systemAdminRouter = router({
   /**
    * Get system health status
    */
-  getSystemHealth: adminOnlyProcedure.query(async ({ ctx }) => {
+  getSystemHealth: adminOnlyProcedure.query(async () => {
+    // Real signal only: probe the database and report which integrations have
+    // credentials configured. No fabricated metrics.
+    let database: "connected" | "unavailable" = "connected";
+    let totalUsers = 0;
+
     try {
-      // In production, fetch real metrics from monitoring service
-      return {
-        status: "healthy" as const,
-        cpu: Math.floor(Math.random() * 80),
-        memory: Math.floor(Math.random() * 80),
-        database: "connected" as const,
-        api: "operational" as const,
-        uptime: "45 days 12 hours",
-        lastCheck: new Date().toISOString(),
-        services: [
-          { name: "API Server", status: "operational", uptime: "99.9%" },
-          { name: "Database", status: "operational", uptime: "99.95%" },
-          { name: "Cache Server", status: "operational", uptime: "100%" },
-          { name: "Email Service", status: "operational", uptime: "99.8%" },
-          { name: "Payment Gateway", status: "operational", uptime: "99.99%" },
-          { name: "Storage Service", status: "operational", uptime: "99.9%" },
-        ],
-      };
+      const stats = await adminDb.getSystemStatistics();
+      totalUsers = stats.totalUsers;
     } catch (error) {
-      console.error("[Admin] Error fetching system health:", error);
+      console.error("[Admin] Database health check failed:", error);
+      database = "unavailable";
+    }
+
+    const integrations: Array<{ name: string; configured: boolean; detail: string }> = [
+      {
+        name: "Payment Gateway (eSewa)",
+        configured: !!process.env.ESEWA_MERCHANT_CODE,
+        detail: "ESEWA_MERCHANT_CODE",
+      },
+      {
+        name: "Payment Gateway (Khalti)",
+        configured: !!(process.env.KHALTI_PUBLIC_KEY && process.env.KHALTI_SECRET_KEY),
+        detail: "KHALTI_PUBLIC_KEY, KHALTI_SECRET_KEY",
+      },
+      {
+        name: "LLM Scoring",
+        configured: !!(process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY),
+        detail: "OPENROUTER_API_KEY",
+      },
+      {
+        name: "Voice Transcription",
+        configured: !!(process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY),
+        detail: "Whisper via LLM provider",
+      },
+      {
+        name: "Object Storage",
+        configured: !!(process.env.S3_BUCKET && process.env.S3_ACCESS_KEY_ID),
+        detail: "S3_BUCKET, S3_ACCESS_KEY_ID",
+      },
+      {
+        name: "Email (Resend)",
+        configured: isEmailConfigured(),
+        detail: "RESEND_API_KEY",
+      },
+    ];
+
+    const services = [
+      {
+        name: "Database",
+        status: database === "connected" ? "operational" : "unavailable",
+        uptime: `${totalUsers} users`,
+      },
+      ...integrations.map((integration) => ({
+        name: integration.name,
+        status: integration.configured ? "configured" : "not configured",
+        uptime: integration.detail,
+      })),
+    ];
+
+    const unconfigured = integrations.filter((i) => !i.configured).length;
+
+    return {
+      status:
+        database === "connected" && unconfigured === 0
+          ? ("healthy" as const)
+          : database === "connected"
+            ? ("degraded" as const)
+            : ("down" as const),
+      database,
+      totalUsers,
+      configuredIntegrations: integrations.length - unconfigured,
+      totalIntegrations: integrations.length,
+      lastCheck: new Date().toISOString(),
+      services,
+    };
+  }),
+
+  /**
+   * Question bank size per section, for the content management view
+   */
+  getContentStats: adminOnlyProcedure.query(async () => {
+    try {
+      return await adminDb.getQuestionCountsBySection();
+    } catch (error) {
+      console.error("[Admin] Error fetching content stats:", error);
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
     }
   }),
@@ -94,16 +159,148 @@ export const systemAdminRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // Log the action
-      console.log(`[Admin] ${ctx.user?.name} toggled ban status for user ${input.userId}`);
+      try {
+        const result = await adminDb.toggleUserBan(input.userId, input.reason);
 
-      return {
-        success: true,
-        message: "User ban status updated",
-        userId: input.userId,
-        timestamp: new Date().toISOString(),
-      };
+        console.log(
+          `[Admin] ${ctx.user?.name} toggled ban for user ${input.userId} -> ${result.isBanned}`
+        );
+
+        return {
+          success: true,
+          message: result.isBanned ? "User banned" : "User unbanned",
+          userId: result.userId,
+          isBanned: result.isBanned,
+          timestamp: result.timestamp,
+        };
+      } catch (error) {
+        console.error("[Admin] Error toggling user ban:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update the user's ban status",
+        });
+      }
     }),
+
+  /**
+   * List platform users with search + pagination
+   */
+  getUsers: adminOnlyProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(200).default(50),
+        offset: z.number().min(0).default(0),
+        search: z.string().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      try {
+        return await adminDb.getPlatformUsers(input.limit, input.offset, input.search);
+      } catch (error) {
+        console.error("[Admin] Error fetching platform users:", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      }
+    }),
+
+  /**
+   * Promote a user to admin or demote an admin back to a regular user
+   */
+  setUserRole: adminOnlyProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        role: z.enum(["user", "admin"]),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      if (input.userId === ctx.user?.id && input.role !== "admin") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "You cannot remove your own admin access",
+        });
+      }
+
+      try {
+        const updated = await adminDb.setUserRole(input.userId, input.role);
+        console.log(`[Admin] ${ctx.user?.name} set role of user ${input.userId} to ${input.role}`);
+        return { success: true, userId: updated.id, role: updated.role };
+      } catch (error) {
+        console.error("[Admin] Error setting user role:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update the user's role",
+        });
+      }
+    }),
+
+  /**
+   * Set a user's ban state explicitly (ban or unban)
+   */
+  setUserBan: adminOnlyProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        banned: z.boolean(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      if (input.userId === ctx.user?.id && input.banned) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "You cannot ban your own account",
+        });
+      }
+
+      try {
+        const updated = await adminDb.setUserBan(input.userId, input.banned, input.reason);
+        console.log(
+          `[Admin] ${ctx.user?.name} ${input.banned ? "banned" : "unbanned"} user ${input.userId}`
+        );
+        return {
+          success: true,
+          userId: updated.id,
+          isBanned: updated.isBanned,
+        };
+      } catch (error) {
+        console.error("[Admin] Error setting user ban:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update the user's ban status",
+        });
+      }
+    }),
+
+  /**
+   * Recent payment transactions for the admin billing view
+   */
+  getRecentPayments: adminOnlyProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(10),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      try {
+        return await adminDb.getPaymentTransactions(input.limit, input.offset);
+      } catch (error) {
+        console.error("[Admin] Error fetching payments:", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      }
+    }),
+
+  /**
+   * Read persisted system configuration
+   */
+  getSystemConfig: adminOnlyProcedure.query(async () => {
+    try {
+      return await adminDb.getSystemConfigEntries();
+    } catch (error) {
+      console.error("[Admin] Error fetching system config:", error);
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    }
+  }),
 
   /**
    * Update system configuration
@@ -116,111 +313,197 @@ export const systemAdminRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      console.log(`[Admin] ${ctx.user?.name} updated config: ${input.key}`);
+      try {
+        const entry = await adminDb.upsertSystemConfig(
+          input.key,
+          input.value,
+          ctx.user?.id
+        );
 
-      return {
-        success: true,
-        message: "Configuration updated",
-        key: input.key,
-        timestamp: new Date().toISOString(),
-      };
+        console.log(`[Admin] ${ctx.user?.name} updated config: ${input.key}`);
+
+        return {
+          success: true,
+          message: "Configuration updated",
+          key: entry.key,
+          value: entry.value,
+          timestamp: entry.updatedAt.toISOString(),
+        };
+      } catch (error) {
+        console.error("[Admin] Error updating system config:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to save the configuration",
+        });
+      }
     }),
 
   /**
-   * Trigger system backup
+   * Run a backup and persist the real database snapshot
    */
-  triggerBackup: adminOnlyProcedure.mutation(async ({ ctx }) => {
-    console.log(`[Admin] ${ctx.user?.name} triggered system backup`);
+  triggerBackup: adminOnlyProcedure
+    .input(z.object({ notes: z.string().optional() }).optional())
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const backup = await adminDb.createBackup({
+          userId: ctx.user?.id,
+          notes: input?.notes,
+        });
 
-    return {
-      success: true,
-      backupId: `backup_${Date.now()}`,
-      status: "in_progress",
-      estimatedTime: "15 minutes",
-      timestamp: new Date().toISOString(),
-    };
-  }),
+        console.log(
+          `[Admin] ${ctx.user?.name} completed backup ${backup.backupId} (${backup.sizeBytes} bytes, ${backup.durationMs}ms)`
+        );
+
+        return {
+          success: true,
+          backupId: backup.backupId,
+          id: backup.id,
+          status: backup.status,
+          sizeBytes: backup.sizeBytes,
+          durationMs: backup.durationMs,
+          snapshot: backup.snapshot,
+          timestamp: backup.createdAt.toISOString(),
+        };
+      } catch (error) {
+        console.error("[Admin] Error running backup:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to run the backup",
+        });
+      }
+    }),
 
   /**
    * Get backup history
    */
   getBackupHistory: adminOnlyProcedure.query(async () => {
-    return [
-      {
-        id: "backup_1710000000000",
-        date: new Date(Date.now() - 24 * 60 * 60000).toISOString(),
-        size: "2.5 GB",
-        status: "completed",
-        duration: "12 minutes",
-      },
-      {
-        id: "backup_1709913600000",
-        date: new Date(Date.now() - 48 * 60 * 60000).toISOString(),
-        size: "2.4 GB",
-        status: "completed",
-        duration: "11 minutes",
-      },
-      {
-        id: "backup_1709827200000",
-        date: new Date(Date.now() - 72 * 60 * 60000).toISOString(),
-        size: "2.3 GB",
-        status: "completed",
-        duration: "10 minutes",
-      },
-    ];
+    try {
+      return await adminDb.getBackups();
+    } catch (error) {
+      console.error("[Admin] Error fetching backup history:", error);
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    }
   }),
 
   /**
-   * Get API key management
+   * Delete a backup record
+   */
+  deleteBackup: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const deleted = await adminDb.deleteBackup(input.id);
+        console.log(`[Admin] ${ctx.user?.name} deleted backup ${deleted.backupId}`);
+        return { success: true, id: deleted.id, backupId: deleted.backupId };
+      } catch (error) {
+        console.error("[Admin] Error deleting backup:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to delete the backup",
+        });
+      }
+    }),
+
+  /**
+   * List API keys (masked; the stored hash is never returned)
    */
   getApiKeys: adminOnlyProcedure.query(async () => {
-    // Mock API keys - in production, fetch from secure vault
-    return [
-      {
-        id: "key_1",
-        name: "Email Service",
-        key: "sk_live_••••••••••••••••",
-        status: "active",
-        lastUsed: "2 minutes ago",
-        createdAt: "2024-01-15",
-      },
-      {
-        id: "key_2",
-        name: "Payment Gateway",
-        key: "pk_live_••••••••••••••••",
-        status: "active",
-        lastUsed: "5 minutes ago",
-        createdAt: "2024-01-20",
-      },
-      {
-        id: "key_3",
-        name: "Storage Service",
-        key: "aws_••••••••••••••••",
-        status: "active",
-        lastUsed: "1 hour ago",
-        createdAt: "2024-02-01",
-      },
-    ];
+    try {
+      return await adminDb.listApiKeys();
+    } catch (error) {
+      console.error("[Admin] Error fetching API keys:", error);
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    }
   }),
 
   /**
-   * Rotate API key
+   * Create an API key. The plaintext secret is returned once, at creation.
+   */
+  createApiKey: adminOnlyProcedure
+    .input(z.object({ name: z.string().min(1).max(128) }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const created = await adminDb.createApiKey(input.name, ctx.user?.id);
+        console.log(`[Admin] ${ctx.user?.name} created API key ${created.name}`);
+        return {
+          success: true,
+          id: created.id,
+          name: created.name,
+          maskedKey: created.maskedKey,
+          secret: created.secret,
+        };
+      } catch (error) {
+        console.error("[Admin] Error creating API key:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create the API key",
+        });
+      }
+    }),
+
+  /**
+   * Rotate an API key, issuing a new secret and invalidating the old one
    */
   rotateApiKey: adminOnlyProcedure
-    .input(
-      z.object({
-        keyId: z.string(),
-      })
-    )
+    .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      console.log(`[Admin] ${ctx.user?.name} rotated API key: ${input.keyId}`);
+      try {
+        const rotated = await adminDb.rotateApiKey(input.id);
+        console.log(`[Admin] ${ctx.user?.name} rotated API key ${rotated.name}`);
+        return {
+          success: true,
+          message: "API key rotated successfully",
+          id: rotated.id,
+          name: rotated.name,
+          maskedKey: rotated.maskedKey,
+          secret: rotated.secret,
+          rotatedAt: rotated.rotatedAt?.toISOString() ?? null,
+        };
+      } catch (error) {
+        console.error("[Admin] Error rotating API key:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to rotate the API key",
+        });
+      }
+    }),
 
-      return {
-        success: true,
-        message: "API key rotated successfully",
-        newKey: "sk_live_••••••••••••••••",
-        timestamp: new Date().toISOString(),
-      };
+  /**
+   * Revoke an API key without deleting its audit record
+   */
+  revokeApiKey: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const revoked = await adminDb.revokeApiKey(input.id);
+        console.log(`[Admin] ${ctx.user?.name} revoked API key ${revoked.name}`);
+        return { success: true, ...revoked };
+      } catch (error) {
+        console.error("[Admin] Error revoking API key:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to revoke the API key",
+        });
+      }
+    }),
+
+  /**
+   * Permanently delete an API key record
+   */
+  deleteApiKey: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const deleted = await adminDb.deleteApiKey(input.id);
+        console.log(`[Admin] ${ctx.user?.name} deleted API key ${deleted.name}`);
+        return { success: true, ...deleted };
+      } catch (error) {
+        console.error("[Admin] Error deleting API key:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to delete the API key",
+        });
+      }
     }),
 
   /**
@@ -295,66 +578,68 @@ export const systemAdminRouter = router({
    * Get system alerts
    */
   getSystemAlerts: adminOnlyProcedure.query(async () => {
-    // Mock alerts - in production, fetch from monitoring service
-    return [
-      {
-        id: 1,
-        severity: "warning" as const,
-        title: "High Memory Usage",
-        message: "Memory usage is at 78%, consider scaling up",
-        timestamp: new Date(Date.now() - 30 * 60000).toISOString(),
-      },
-      {
-        id: 2,
-        severity: "info" as const,
-        title: "Backup Completed",
-        message: "Daily backup completed successfully",
-        timestamp: new Date(Date.now() - 2 * 60 * 60000).toISOString(),
-      },
-      {
-        id: 3,
-        severity: "error" as const,
-        title: "Failed Payment Processing",
-        message: "2 payments failed in the last hour",
-        timestamp: new Date(Date.now() - 4 * 60 * 60000).toISOString(),
-      },
-    ];
+    try {
+      return await adminDb.getSystemAlerts();
+    } catch (error) {
+      console.error("[Admin] Error fetching system alerts:", error);
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    }
   }),
 
   /**
-   * Acknowledge alert
+   * Acknowledge an alert, persisting the acknowledgement
    */
   acknowledgeAlert: adminOnlyProcedure
-    .input(
-      z.object({
-        alertId: z.number(),
-      })
-    )
+    .input(z.object({ alertKey: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
-      console.log(`[Admin] ${ctx.user?.name} acknowledged alert: ${input.alertId}`);
+      try {
+        const alert = await adminDb.acknowledgeAlert(input.alertKey, ctx.user?.id);
+        console.log(`[Admin] ${ctx.user?.name} acknowledged alert ${input.alertKey}`);
 
-      return {
-        success: true,
-        message: "Alert acknowledged",
-        timestamp: new Date().toISOString(),
-      };
+        return {
+          success: true,
+          message: "Alert acknowledged",
+          alertKey: alert.alertKey,
+          acknowledgedAt: alert.acknowledgedAt?.toISOString() ?? null,
+        };
+      } catch (error) {
+        console.error("[Admin] Error acknowledging alert:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to acknowledge the alert",
+        });
+      }
     }),
 
   /**
-   * Get system performance metrics
+   * Clear an alert acknowledgement so it shows as active again
+   */
+  reopenAlert: adminOnlyProcedure
+    .input(z.object({ alertKey: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const alert = await adminDb.reopenAlert(input.alertKey);
+        console.log(`[Admin] ${ctx.user?.name} reopened alert ${input.alertKey}`);
+        return { success: true, alertKey: alert.alertKey, acknowledged: alert.acknowledged };
+      } catch (error) {
+        console.error("[Admin] Error reopening alert:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to reopen the alert",
+        });
+      }
+    }),
+
+  /**
+   * Get system performance metrics (measured, not hardcoded)
    */
   getPerformanceMetrics: adminOnlyProcedure.query(async () => {
-    // Mock performance metrics - in production, fetch from monitoring service
-    return {
-      apiResponseTime: "145ms",
-      databaseQueryTime: "23ms",
-      cacheHitRate: "87%",
-      errorRate: "0.02%",
-      uptime: "99.98%",
-      requestsPerSecond: 1250,
-      activeConnections: 456,
-      queuedRequests: 12,
-    };
+    try {
+      return await adminDb.getPerformanceMetrics();
+    } catch (error) {
+      console.error("[Admin] Error fetching performance metrics:", error);
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    }
   }),
 });
 

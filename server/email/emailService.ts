@@ -40,26 +40,64 @@ interface WelcomeEmailData {
   activationDate: string;
 }
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "test_key";
 const SENDER_EMAIL = process.env.SENDER_EMAIL || "noreply@ptepractice.com";
-const SENDER_NAME = "PTEMaster";
+const SENDER_NAME = process.env.SENDER_NAME || "PTEMaster";
+const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
 /**
- * Send email using Resend API
+ * Whether transactional email can actually be delivered. The admin system
+ * health panel reports this same flag.
  */
-async function sendEmail(options: EmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
+export function isEmailConfigured(): boolean {
+  return Boolean(process.env.RESEND_API_KEY);
+}
+
+/**
+ * Send an email through the Resend HTTP API.
+ *
+ * Returns `{ success: false, error: "email_not_configured" }` when
+ * RESEND_API_KEY is absent, so callers can log the miss without throwing and
+ * without pretending the message was delivered.
+ */
+async function sendEmail(
+  options: EmailOptions
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn(
+      `[Email] RESEND_API_KEY is not set - skipped "${options.subject}" to ${options.to}`
+    );
+    return { success: false, error: "email_not_configured" };
+  }
+
   try {
-    // In production, use actual Resend API
-    // For now, log the email
-    console.log(`[Email] Sending to ${options.to}: ${options.subject}`);
+    const response = await fetch(RESEND_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: options.from || `${SENDER_NAME} <${SENDER_EMAIL}>`,
+        to: [options.to],
+        subject: options.subject,
+        html: options.html,
+      }),
+    });
 
-    // Simulate API call
-    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const payload = (await response.json().catch(() => null)) as
+      | { id?: string; message?: string; error?: string }
+      | null;
 
-    return {
-      success: true,
-      messageId,
-    };
+    if (!response.ok) {
+      const message =
+        payload?.message || payload?.error || `Resend responded with ${response.status}`;
+      console.error(`[Email] Failed to send "${options.subject}" to ${options.to}: ${message}`);
+      return { success: false, error: message };
+    }
+
+    console.log(`[Email] Sent "${options.subject}" to ${options.to} (${payload?.id ?? "no id"})`);
+    return { success: true, messageId: payload?.id };
   } catch (error) {
     console.error("Email send error:", error);
     return {
@@ -370,6 +408,7 @@ export async function sendCancellationConfirmation(userName: string, userEmail: 
 }
 
 export default {
+  isEmailConfigured,
   sendPaymentReceipt,
   sendSubscriptionRenewalReminder,
   sendWelcomeEmail,

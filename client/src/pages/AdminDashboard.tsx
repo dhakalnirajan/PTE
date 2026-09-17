@@ -1,21 +1,49 @@
-import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect, useState } from "react";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Users, CreditCard, BarChart3, Settings, LogOut,
-  TrendingUp, DollarSign, ShoppingCart, AlertCircle,
+  DollarSign, ShoppingCart, AlertCircle, Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import AdminUserManagement from "@/components/AdminUserManagement";
 import AdminAnalytics from "@/components/AdminAnalytics";
 
+function formatCurrency(amount: number) {
+  return `₨${amount.toLocaleString()}`;
+}
+
+function formatDate(value: Date | string | null | undefined) {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
+
+  const isAdmin = !!user && user.role === "admin";
+
+  const statsQuery = trpc.systemAdmin.getSystemStats.useQuery(undefined, {
+    enabled: isAdmin,
+  });
+  const revenueQuery = trpc.systemAdmin.getPaymentRevenue.useQuery(
+    { days: 30 },
+    { enabled: isAdmin }
+  );
+  const paymentsQuery = trpc.systemAdmin.getRecentPayments.useQuery(
+    { limit: 10, offset: 0 },
+    { enabled: isAdmin }
+  );
+  const healthQuery = trpc.systemAdmin.getSystemHealth.useQuery(undefined, {
+    enabled: isAdmin,
+  });
 
   // Check if user is admin
   useEffect(() => {
@@ -33,31 +61,50 @@ export default function AdminDashboard() {
     window.location.href = "/";
   };
 
-  // Mock data - in production, fetch from API
-  const stats = {
-    totalUsers: 1234,
-    activeSubscriptions: 456,
-    totalRevenue: 2500000, // NPR
-    storageUsed: 125.5, // GB
-    monthlyGrowth: 12.5, // %
-    conversionRate: 37, // %
-  };
+  const stats = statsQuery.data;
+  const revenue = revenueQuery.data;
+  const payments = paymentsQuery.data?.transactions ?? [];
 
-  const revenueByGateway = [
-    { gateway: "Khalti", amount: 1500000, percentage: 60 },
-    { gateway: "eSewa", amount: 1000000, percentage: 40 },
-  ];
+  const conversionRate =
+    stats && stats.totalUsers > 0
+      ? Math.round((stats.activeSubscriptions / stats.totalUsers) * 100)
+      : 0;
 
-  const subscriptionPlans = [
-    { name: "Free", users: 500, revenue: 0 },
-    { name: "Pro", users: 300, revenue: 1500000 },
-    { name: "Premium", users: 156, revenue: 1000000 },
-  ];
+  const revenueByMethod = revenue?.revenueByMethod ?? [];
+  const totalMethodRevenue = revenueByMethod.reduce(
+    (sum, item) => sum + Number(item.total ?? 0),
+    0
+  );
 
-  const recentPayments = [
-    { id: 1, user: "User #1234", amount: 999, gateway: "Khalti", date: "2 hours ago", status: "completed" },
-    { id: 2, user: "User #5678", amount: 1999, gateway: "eSewa", date: "4 hours ago", status: "completed" },
-    { id: 3, user: "User #9012", amount: 499, gateway: "Khalti", date: "1 day ago", status: "pending" },
+  const kpis = [
+    {
+      label: "Total Users",
+      value: stats ? stats.totalUsers.toLocaleString() : "—",
+      icon: Users,
+      color: "bg-blue-500",
+      detail: stats ? `${stats.activeUsers.toLocaleString()} active` : "",
+    },
+    {
+      label: "Active Subscriptions",
+      value: stats ? stats.activeSubscriptions.toLocaleString() : "—",
+      icon: ShoppingCart,
+      color: "bg-teal-500",
+      detail: stats ? `${conversionRate}% conversion` : "",
+    },
+    {
+      label: "Total Revenue",
+      value: stats ? formatCurrency(stats.totalRevenue) : "—",
+      icon: DollarSign,
+      color: "bg-green-500",
+      detail: "All time, completed payments",
+    },
+    {
+      label: "Failed Payments",
+      value: stats ? stats.failedPayments.toLocaleString() : "—",
+      icon: AlertCircle,
+      color: "bg-red-500",
+      detail: "Requires review",
+    },
   ];
 
   return (
@@ -94,39 +141,19 @@ export default function AdminDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* KPI Cards */}
+        {statsQuery.isError && (
+          <Card className="bg-red-900/30 border-red-700 mb-6">
+            <CardContent className="p-4 flex items-center gap-3 text-red-200">
+              <AlertCircle className="w-5 h-5" />
+              Couldn't load system statistics.
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {[
-            {
-              label: "Total Users",
-              value: stats.totalUsers.toLocaleString(),
-              icon: Users,
-              color: "bg-blue-500",
-              trend: `+${stats.monthlyGrowth}% this month`,
-            },
-            {
-              label: "Active Subscriptions",
-              value: stats.activeSubscriptions.toLocaleString(),
-              icon: ShoppingCart,
-              color: "bg-teal-500",
-              trend: `${stats.conversionRate}% conversion`,
-            },
-            {
-              label: "Total Revenue",
-              value: `₨${(stats.totalRevenue / 100000).toFixed(1)}L`,
-              icon: DollarSign,
-              color: "bg-green-500",
-              trend: "All time",
-            },
-            {
-              label: "Storage Used",
-              value: `${stats.storageUsed.toFixed(1)} GB`,
-              icon: BarChart3,
-              color: "bg-purple-500",
-              trend: "of unlimited",
-            },
-          ].map((stat, i) => (
+          {kpis.map((stat, i) => (
             <motion.div
-              key={i}
+              key={stat.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
@@ -136,8 +163,15 @@ export default function AdminDashboard() {
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-sm text-slate-400 mb-1">{stat.label}</p>
-                      <p className="text-2xl font-bold text-white">{stat.value}</p>
-                      <p className="text-xs text-slate-500 mt-2">{stat.trend}</p>
+                      <p className="text-2xl font-bold text-white flex items-center gap-2">
+                        {statsQuery.isLoading && (
+                          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                        )}
+                        {stat.value}
+                      </p>
+                      {stat.detail && (
+                        <p className="text-xs text-slate-500 mt-2">{stat.detail}</p>
+                      )}
                     </div>
                     <div className={`w-12 h-12 rounded-lg ${stat.color} flex items-center justify-center`}>
                       <stat.icon className="w-6 h-6 text-white" />
@@ -166,24 +200,43 @@ export default function AdminDashboard() {
               <Card className="bg-slate-700 border-slate-600">
                 <CardHeader>
                   <CardTitle className="text-white">Revenue by Gateway</CardTitle>
-                  <CardDescription>Payment method breakdown</CardDescription>
+                  <CardDescription>Completed payments, last 30 days</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {revenueByGateway.map((item, i) => (
-                    <div key={i}>
-                      <div className="flex justify-between mb-2">
-                        <span className="text-sm text-white font-medium">{item.gateway}</span>
-                        <span className="text-sm text-teal-400">₨{(item.amount / 100000).toFixed(1)}L</span>
-                      </div>
-                      <div className="w-full bg-slate-600 rounded-full h-2">
-                        <div
-                          className="bg-teal-500 h-2 rounded-full"
-                          style={{ width: `${item.percentage}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">{item.percentage}% of revenue</p>
+                  {revenueQuery.isLoading && (
+                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading...
                     </div>
-                  ))}
+                  )}
+                  {!revenueQuery.isLoading && revenueByMethod.length === 0 && (
+                    <p className="text-sm text-slate-400">No completed payments yet.</p>
+                  )}
+                  {revenueByMethod.map((item, i) => {
+                    const total = Number(item.total ?? 0);
+                    const pct =
+                      totalMethodRevenue > 0
+                        ? Math.round((total / totalMethodRevenue) * 100)
+                        : 0;
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between mb-2">
+                          <span className="text-sm text-white font-medium capitalize">
+                            {item.method}
+                          </span>
+                          <span className="text-sm text-teal-400">
+                            {formatCurrency(total)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-600 rounded-full h-2">
+                          <div
+                            className="bg-teal-500 h-2 rounded-full"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">{pct}% of revenue</p>
+                      </div>
+                    );
+                  })}
                 </CardContent>
               </Card>
 
@@ -194,14 +247,26 @@ export default function AdminDashboard() {
                   <CardDescription>Active users per plan</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {subscriptionPlans.map((plan, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-slate-600 rounded-lg">
+                  {revenueQuery.isLoading && (
+                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+                    </div>
+                  )}
+                  {!revenueQuery.isLoading &&
+                    (revenue?.subscriptionBreakdown ?? []).length === 0 && (
+                      <p className="text-sm text-slate-400">No active subscriptions yet.</p>
+                    )}
+                  {(revenue?.subscriptionBreakdown ?? []).map((plan, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between p-3 bg-slate-600 rounded-lg"
+                    >
                       <div>
-                        <p className="font-medium text-white">{plan.name}</p>
-                        <p className="text-sm text-slate-400">{plan.users} users</p>
+                        <p className="font-medium text-white">{plan.plan}</p>
+                        <p className="text-sm text-slate-400">{plan.count} users</p>
                       </div>
-                      <Badge variant={plan.name === "Free" ? "secondary" : "default"}>
-                        ₨{plan.revenue > 0 ? (plan.revenue / 100000).toFixed(0) + "L" : "Free"}
+                      <Badge variant="default">
+                        {formatCurrency(Number(plan.totalMrr ?? 0))} MRR
                       </Badge>
                     </div>
                   ))}
@@ -216,8 +281,16 @@ export default function AdminDashboard() {
                 <CardDescription>Latest 10 transactions</CardDescription>
               </CardHeader>
               <CardContent>
+                {paymentsQuery.isLoading && (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+                  </div>
+                )}
+                {!paymentsQuery.isLoading && payments.length === 0 && (
+                  <p className="text-sm text-slate-400">No payments recorded yet.</p>
+                )}
                 <div className="space-y-2">
-                  {recentPayments.map((payment) => (
+                  {payments.map((payment) => (
                     <div
                       key={payment.id}
                       className="flex items-center justify-between p-3 bg-slate-600 rounded-lg hover:bg-slate-500 transition-colors"
@@ -227,12 +300,18 @@ export default function AdminDashboard() {
                           <CreditCard className="w-5 h-5 text-teal-400" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-white">{payment.user}</p>
-                          <p className="text-xs text-slate-400">{payment.gateway} • {payment.date}</p>
+                          <p className="text-sm font-medium text-white">
+                            {payment.userName ?? `User #${payment.userId}`}
+                          </p>
+                          <p className="text-xs text-slate-400 capitalize">
+                            {payment.gateway} • {formatDate(payment.createdAt)}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-medium text-white">₨{payment.amount}</span>
+                        <span className="font-medium text-white">
+                          {formatCurrency(payment.amount)}
+                        </span>
                         <Badge
                           variant={payment.status === "completed" ? "default" : "secondary"}
                           className="capitalize"
@@ -245,6 +324,43 @@ export default function AdminDashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* System Health */}
+            <Card className="bg-slate-700 border-slate-600">
+              <CardHeader>
+                <CardTitle className="text-white">System Health</CardTitle>
+                <CardDescription>
+                  Live database probe and integration credential check
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {healthQuery.isLoading && (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+                  </div>
+                )}
+                {!healthQuery.isLoading &&
+                  (healthQuery.data?.services ?? []).length === 0 && (
+                    <p className="text-sm text-slate-400">No service data available.</p>
+                  )}
+                {(healthQuery.data?.services ?? []).map((service) => {
+                  const ok =
+                    service.status === "operational" || service.status === "configured";
+                  return (
+                    <div
+                      key={service.name}
+                      className="flex items-center justify-between p-3 bg-slate-600 rounded-lg"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">{service.name}</p>
+                        <p className="text-xs text-slate-400">{service.uptime}</p>
+                      </div>
+                      <Badge variant={ok ? "default" : "secondary"}>{service.status}</Badge>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Users Tab */}
@@ -253,19 +369,112 @@ export default function AdminDashboard() {
           </TabsContent>
 
           {/* Billing Tab */}
-          <TabsContent value="billing">
+          <TabsContent value="billing" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-slate-700 border-slate-600">
+                <CardHeader>
+                  <CardTitle className="text-sm text-slate-300">Revenue (30 days)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-white">
+                    {formatCurrency(Number(revenue?.totalRevenue ?? 0))}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-slate-700 border-slate-600">
+                <CardHeader>
+                  <CardTitle className="text-sm text-slate-300">Transactions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-white">
+                    {paymentsQuery.data?.total ?? 0}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-slate-700 border-slate-600">
+                <CardHeader>
+                  <CardTitle className="text-sm text-slate-300">Failed Payments</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-red-400">
+                    {Number(revenue?.failedPayments ?? 0)}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
             <Card className="bg-slate-700 border-slate-600">
               <CardHeader>
-                <CardTitle className="text-white">Billing Management</CardTitle>
-                <CardDescription>Revenue and subscription tracking</CardDescription>
+                <CardTitle className="text-white">All Payments</CardTitle>
+                <CardDescription>
+                  Transaction ledger with gateway reference IDs
+                </CardDescription>
               </CardHeader>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-center h-40 text-slate-400">
-                  <div className="text-center">
-                    <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>Billing dashboard coming soon</p>
+              <CardContent>
+                {payments.length === 0 ? (
+                  <p className="text-sm text-slate-400">No payments recorded yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-600">
+                          <th className="px-3 py-2 text-left text-sm font-semibold text-slate-300">
+                            User
+                          </th>
+                          <th className="px-3 py-2 text-left text-sm font-semibold text-slate-300">
+                            Amount
+                          </th>
+                          <th className="px-3 py-2 text-left text-sm font-semibold text-slate-300">
+                            Gateway
+                          </th>
+                          <th className="px-3 py-2 text-left text-sm font-semibold text-slate-300">
+                            Status
+                          </th>
+                          <th className="px-3 py-2 text-left text-sm font-semibold text-slate-300">
+                            Transaction ID
+                          </th>
+                          <th className="px-3 py-2 text-left text-sm font-semibold text-slate-300">
+                            Date
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payments.map((payment) => (
+                          <tr
+                            key={payment.id}
+                            className="border-b border-slate-600 hover:bg-slate-600/50"
+                          >
+                            <td className="px-3 py-2 text-sm text-white">
+                              {payment.userName ?? `User #${payment.userId}`}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-white">
+                              {formatCurrency(payment.amount)}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-slate-300 capitalize">
+                              {payment.gateway}
+                            </td>
+                            <td className="px-3 py-2">
+                              <Badge
+                                variant={
+                                  payment.status === "completed" ? "default" : "secondary"
+                                }
+                                className="capitalize"
+                              >
+                                {payment.status}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-slate-400 font-mono">
+                              {payment.transactionId ?? "—"}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-slate-400">
+                              {formatDate(payment.createdAt)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -297,6 +506,22 @@ export default function AdminDashboard() {
                           <p>KHALTI_PUBLIC_KEY=your_public_key</p>
                           <p>KHALTI_SECRET_KEY=your_secret_key</p>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-600 rounded-lg border border-slate-500">
+                    <div className="flex items-start gap-3">
+                      <BarChart3 className="w-5 h-5 text-teal-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-medium text-white mb-1">Advanced system control</h4>
+                        <p className="text-sm text-slate-400">
+                          Health monitoring, activity logs and alert management live in the{" "}
+                          <a href="/system-admin" className="text-teal-400 hover:text-teal-300">
+                            System Admin Panel
+                          </a>
+                          .
+                        </p>
                       </div>
                     </div>
                   </div>

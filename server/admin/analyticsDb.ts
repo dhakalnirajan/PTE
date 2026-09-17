@@ -205,23 +205,12 @@ export async function getPaymentRevenueMetrics(days: number = 30) {
 }
 
 // ── System Health Metrics ──────────────────────────────────────────────────
-
-export async function getSystemHealthMetrics() {
-  // These would typically come from monitoring services
-  // For now, returning mock data structure
-  return {
-    uptime: 99.9,
-    errorRate: 0.1,
-    avgResponseTime: 245, // ms
-    activeConnections: 42,
-    storageUsed: 2.4, // GB
-    storageTotal: 100, // GB
-    cpuUsage: 35,
-    memoryUsage: 62,
-    databaseStatus: "healthy",
-    apiStatus: "operational",
-  };
-}
+//
+// Removed: this returned hardcoded uptime/error-rate/CPU figures from a
+// monitoring service that the project does not have. Live system health is
+// served by systemAdmin.getSystemHealth (database probe + integration
+// credential check) and systemAdmin.getPerformanceMetrics (measured database
+// latency, 24h activity, payment failure rate, process memory).
 
 // ── Customer Lifetime Value (CLV) ──────────────────────────────────────────
 

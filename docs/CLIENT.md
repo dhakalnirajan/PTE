@@ -41,12 +41,17 @@ Eager pages: Home/Login/AuthCallback; everything else lazy.
 | `/login` | Login |
 | `/auth/callback` | AuthCallback |
 | `/dashboard` | Dashboard |
-| `/admin` | AdminDashboard (redirect hub) |
-| `/admin/dashboard` | AdminDashboardPage |
+| `/admin` | AdminDashboard |
+| `/admin/analytics` | AdminAnalyticsPage |
+| `/admin/dashboard` | AdminDashboard (same component as `/admin`) |
 | `/admin/users` | AdminUsersPage |
 | `/admin/payments` | AdminPaymentsPage |
-| `/payments` | PaymentHistory |
+| `/payments` | PaymentHistory (subscription management + billing) |
 | `/pricing` | Pricing |
+| `/features` | FeaturesPage (public feature overview) |
+| `/exam-structure` | ExamStructurePage (full PTE syllabus) |
+| `/score-guide` | ScoreGuidePage (10-90 scale + CEFR bands) |
+| `/payment/esewa/success` · `/payment/esewa/failure` · `/payment/khalti/callback` | PaymentReturn |
 | `/system-admin` | SystemAdminPanel |
 | `/practice` + `/practice/:section` | Practice |
 | `/session/:sessionId` | PracticeSession |
@@ -60,8 +65,9 @@ Eager pages: Home/Login/AuthCallback; everything else lazy.
 | `/resources` | Resources |
 | `/404` + catch-all | NotFound |
 
-> `/admin/analytics` and `/admin/settings` appear in AdminLayout menu but have
-> **no route** (404).
+> Admin navigation is fully routed: `/admin/dashboard` (and `/admin`),
+> `/admin/users`, `/admin/payments`, `/admin/analytics`, and the System Admin
+> item points at `/system-admin`.
 
 ## Context & Hooks
 
@@ -82,18 +88,19 @@ Eager pages: Home/Login/AuthCallback; everything else lazy.
 |---|---|
 | `PTELayout` | Main authed shell — sidebar (lucide), mobile drawer, header. Nav: Dashboard/Practice/Mock Test/Revision (⚡ SRS badge, polls `trpc.srs.getStats` every 60s)/AI Coaching Plan/Learning Modes/Analytics/Resources/Profile + Quick Practice section links. Own logout mutation → `/`. |
 | `DashboardLayout` | shadcn `SidebarProvider` shell, resizable sidebar (drag, width 200–480 persisted to localStorage `sidebar-width`), mobile top bar. Gate: skeleton / Sign-in screen. Demo menu only. |
-| `AdminLayout` | Admin dark-slate shell, collapsible. Menu: `/admin/dashboard`, `/admin/users`, `/admin/payments`, `/admin/analytics`, `/admin/settings`. |
+| `AdminLayout` | Admin dark-slate shell, collapsible. Menu: `/admin/dashboard`, `/admin/users`, `/admin/payments`, `/admin/analytics`, `/system-admin`. |
 | `SpeakingTask` | Core speaking UI. `SPEAKING_TIMINGS` per task. Prep countdown (`CircularTimer`) + skip button → `MediaRecorder` (webm/opus) → Web Audio `AnalyserNode` live waveform → Web Speech API live transcript → stop → playback review → post-submit LCS word alignment (`alignWords`, 5 status classes) → `FluencyMetrics` (WPM/pauses/accuracy/omissions) → model `speechSynthesis` TTS player (rate 0.7/0.9/1.1). |
 | `AIChatBox` | Reusable chat UI (types `Message`, `AIChatBoxProps`, server-aligned `system|user|assistant`). Streamdown markdown, auto-scroll, suggested prompts. |
 | `AIFeedbackPanel` | Post-submit feedback. `trpc.aiCoach.getTaskFeedback` mutation. Overall band, estimated score range, score breakdown bars, specific errors, priority tips, model answers 65/79/90, next steps. |
-| `AdminAnalytics` | Mock-data analytics (old), recharts charts, NRP metrics. |
-| `AdminAnalyticsReal` | Live analytics. Day-range 7/30/90; queries `systemAdmin.{getUserEngagement, getLearningPerformance, getPaymentRevenue, getChurnRetention, getCustomerLTV}`. DAU line, login frequency, score pie, scores-per-task bar, weak areas, revenue pie + line, subscription breakdown, LTV + top-10. |
-| `AdminUserManagement` | User table (mock fallback), search/filter/sort/bulk, `onUserAction`, pagination stub. |
+| `AdminAnalytics` | Live analytics (the only analytics component — the mock version was deleted). Day-range 7/30/90; queries `systemAdmin.{getUserEngagement, getLearningPerformance, getPaymentRevenue, getChurnRetention, getCustomerLTV}`. DAU line, login frequency, score pie, scores-per-task bar, weak areas, revenue pie + line, subscription breakdown, LTV + top-10. |
+| `AdminUserManagement` | Real user table backed by `systemAdmin.getUsers` with search + pagination, and real row actions (`setUserBan`, `setUserRole`). |
 | `AnimatedCounter` | In-view rAF count-up. |
 | `ScoreRing` | Animated SVG ring on 10–90 scale. |
 | `AnimatedProgressBar` / `SkillBar` / `CircularProgress` | Score bars color-coded by band (≥79/≥65/≥50). |
 | `ConfettiCelebration` / `ScoreBadge` | 60-particle confetti + pop-in score chip (2.5 s). |
+| `HeroSection` | Landing hero. Single primary CTA, proof metrics row, and the sample score report embedded in a browser-chrome dashboard frame with layered borders and elevation. Sora display headings. |
 | `SkeletonLoader` | `DashboardSkeleton`, `PracticeCardSkeleton`, `ScoreReportSkeleton`, `QuestionListSkeleton`, `FeedbackSkeleton`. |
+| `WalkthroughTour` | First-time guided tour. Steps target `data-tour` elements; clip-path spotlight backdrop, highlight ring, auto-placement popover (top/bottom/left/right with viewport fallbacks, centered fallback for missing targets), scroll-into-view per step, interactive `advanceOn` steps. Keyboard: Escape dismiss, arrows navigate, Tab trap, focus on primary button. "Step N of M" + dot progress; Back/Next/Finish controls; skip always available. Completion persisted to localStorage (`pte.tour.<id>.completed`); `resetTour(id)` re-arms it. Exports `isTourCompleted`, `completeTour`, `resetTour`. |
 | `DashboardLayoutSkeleton` | Sidebar + content skeleton. |
 | `ErrorBoundary` | Class boundary, stack trace panel + Reload. |
 | `Map` | `MapView` — Google Maps JS via forge proxy (`VITE_FRONTEND_FORGE_API_URL`) with `VITE_FRONTEND_FORGE_API_KEY`. |
@@ -111,7 +118,7 @@ slider, sonner, switch, table, tabs, textarea, toggle, toggle-group, tooltip,
 sidebar — plus custom additions: `button-group`, `input-group`, `field`,
 `empty`, `item`, `kbd`, `spinner`.
 
-## Pages (`src/pages/`, 23)
+## Pages (`src/pages/`, 26)
 
 | Page | Route | Behavior / tRPC |
 |---|---|---|
@@ -125,18 +132,23 @@ sidebar — plus custom additions: `button-group`, `input-group`, `field`,
 | ScoreReport | `/score-report/:sessionId` | `sessions.getReport`. Overall ScoreRing, skill bars, per-answer breakdown, band badges, confetti on high scores. |
 | Analytics | `/analytics` | `analytics.myStats`, `sessions.myHistory({limit:20})`, `analytics.milestones`. Trend charts, skill bars, daily target. |
 | LearningModes | `/learning-modes` | beginner/exam/diagnostic/revision cards → session creation. |
-| Profile | `/profile` | `analytics.myStats`, `profile.update`, `analytics.generateTarget`. Editable level/goal/target/notifications. |
+| Profile | `/profile` | `analytics.myStats`, `profile.update`, `analytics.generateTarget`. Editable level/goal/target/notifications. Includes a "Replay Dashboard Tour" button that resets the walkthrough flag. |
 | CoachingPlan | `/coaching-plan` | `aiCoach.getCoachingPlan` mutation → 7-day/90-day plan, focus areas, estimated band. |
 | RevisionMode | `/revision` | SRS UI. `srs.getStats`, `getDueCards({limit:20})`, `recordReview`, `getUpcomingCards({limit:8})`. Card flip, ratings Again/Hard/Good/Easy. |
+| Dashboard tour | (within `/dashboard`) | Six-step `WalkthroughTour` on first visit: target banner, practice nav, study stats, today's target (interactive: clicking "Set 30-min Target" advances), quick practice, study tools. |
 | Resources | `/resources` | Static Pearson resource library. |
-| Pricing | `/pricing` | Free/Pro/Premium tiers (NPR), comparison, CTA → `/login`. |
-| PaymentHistory | `/payments` | Payment list + active subscription UI. tRPC calls commented out. |
+| Pricing | `/pricing` | Free/Pro/Premium tiers (NPR), comparison, initiates eSewa/Khalti checkout. |
+| FeaturesPage | `/features` | Public overview of the four core capabilities (AI scoring, coaching, simulator, micro-skills) with a sticky tab list and detail panel; cross-links to exam structure, score guide, and pricing. |
+| ExamStructurePage | `/exam-structure` | Complete PTE Academic syllabus: tabbed sections, per-task question counts, timing, and approach tips; practice links respect authentication. |
+| ScoreGuidePage | `/score-guide` | 10-90 score bands with CEFR alignment, acceptance info (universities, governments, employers), how the AI estimate maps to the real exam. |
+| PaymentReturn | `/payment/esewa/success`, `/payment/esewa/failure`, `/payment/khalti/callback` | Reads the gateway's return params, calls `payment.verifyESewaPayment` / `verifyKhaltiPayment`, invalidates payment + subscription queries, and reports the outcome. |
+| PaymentHistory | `/payments` | Subscription management + billing: current plan and period, usage, upgrade/downgrade (`changePlan`), cancel (`cancelSubscription`), reactivate (`reactivateSubscription`), auto-renew toggle (`setAutoRenew`), subscription history, payment history with receipt download. |
 | NotFound | `/404` + catch-all | 404 + "Go home". |
-| AdminDashboard | `/admin` | Redirect hub by role. |
-| AdminDashboardPage | `/admin/dashboard` | `systemAdmin.getSystemStats`, `getSystemHealth`. |
-| AdminUsersPage | `/admin/users` | `systemAdmin.getActivityLogs({limit:100})` + AdminUserManagement. |
-| AdminPaymentsPage | `/admin/payments` | `systemAdmin.getActivityLogs({limit:200})`. |
-| SystemAdminPanel | `/system-admin` | 6-tab system panel: Health, Users, Content, Settings, Logs, Alerts. `getSystemStats`, `getSystemHealth`, `getActivityLogs`, `getSystemAlerts`, `getPerformanceMetrics`. |
+| AdminAnalyticsPage | `/admin/analytics` | `AdminLayout` + the live `AdminAnalytics` component. |
+| AdminDashboard | `/admin` + `/admin/dashboard` | One dashboard component: KPI cards, revenue by gateway, subscriptions by plan, recent payments, live system health, and tabs embedding `AdminUserManagement` + `AdminAnalytics`. (The separate `AdminDashboardPage` duplicate was deleted.) |
+| AdminUsersPage | `/admin/users` | `systemAdmin.getUsers` + AdminUserManagement (real ban/promote). |
+| AdminPaymentsPage | `/admin/payments` | `systemAdmin.getRecentPayments` + `getSystemStats`. |
+| SystemAdminPanel | `/system-admin` | 6-tab system panel: Health (+ live metrics), Users (real list + search + refresh), Content (question counts per section), Settings (persisted `system_config` CRUD), Logs, Alerts (derived alerts with acknowledge/reopen). |
 | ComponentShowcase | (no route) | shadcn/ui demo page + AIChatBox demo. |
 
 ## Theming (`src/index.css`)

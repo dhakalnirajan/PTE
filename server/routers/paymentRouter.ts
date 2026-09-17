@@ -11,11 +11,16 @@ import {
   getPaymentByReferenceId,
   getUserPayments,
   getSubscriptionPlans,
-  createSubscription,
+  getSubscriptionPlanById,
   getUserActiveSubscription,
+  getUserSubscriptions,
   cancelSubscription,
+  updateSubscription,
   getSubscriptionWithPlan,
+  setPaymentPidx,
+  getPaymentByPidx,
 } from "../payment/db";
+import { fulfilPayment, type StoredPayment } from "../payment/fulfilment";
 import {
   createESewaPaymentRequest,
   verifyESewaPayment,
@@ -27,6 +32,7 @@ import {
   generateReferenceId as generateKhaltiReferenceId,
   nprToKhalti,
 } from "../payment/khalti";
+import { sendCancellationConfirmation } from "../email/emailService";
 
 const ESEWA_CONFIG = {
   merchantCode: process.env.ESEWA_MERCHANT_CODE || "TESTMERCHANT",
@@ -58,25 +64,29 @@ export const paymentRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        const plan = await getSubscriptionPlanById(input.planId);
+        if (!plan) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Plan not found" });
+        }
+
         const referenceId = generateESewaReferenceId(ctx.user.id, Date.now());
 
-        // Create payment record (we'll track by referenceId)
-        try {
-          await createPayment({
-            userId: ctx.user.id,
-            gateway: "esewa",
-            amount: 1000, // Placeholder - get from plan
-            description: input.productDescription,
-            referenceId,
-          });
-        } catch (e) {
-          console.error("Error creating payment record:", e);
-        }
+        // Create the payment record first: the webhook looks it up by
+        // referenceId, so an unrecorded payment could never be fulfilled.
+        const productCode = `PLAN${plan.id}`;
+        const payment = await createPayment({
+          userId: ctx.user.id,
+          gateway: "esewa",
+          amount: plan.price,
+          description: input.productDescription,
+          referenceId,
+          metadata: { planId: plan.id, productCode, productName: input.productName },
+        });
 
         // Generate eSewa payment request
         const esewaRequest = createESewaPaymentRequest(ESEWA_CONFIG, {
-          amount: 1000,
-          productCode: `PLAN${input.planId}`,
+          amount: plan.price,
+          productCode,
           productName: input.productName,
           productDescription: input.productDescription,
           referenceId,
@@ -84,12 +94,13 @@ export const paymentRouter = router({
         });
 
         return {
-          paymentId: 0,
+          paymentId: payment.id,
           paymentUrl: esewaRequest.paymentUrl,
           referenceId,
         };
       } catch (error) {
         console.error("eSewa payment initiation error:", error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to initiate eSewa payment",
@@ -97,9 +108,16 @@ export const paymentRouter = router({
       }
     }),
 
-  // Verify eSewa payment
+  // Verify eSewa payment.
+  // `referenceId` is our own payment reference (eSewa's pid/oid) sent back on
+  // the success redirect; it is the reliable way to find the ledger row.
   verifyESewaPayment: protectedProcedure
-    .input(z.object({ transactionCode: z.string() }))
+    .input(
+      z.object({
+        transactionCode: z.string(),
+        referenceId: z.string().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       try {
         const verification = await verifyESewaPayment(
@@ -114,26 +132,33 @@ export const paymentRouter = router({
           });
         }
 
-        // Update payment status
-        const payment = await getPaymentByReferenceId(
-          verification.transactionCode || ""
-        );
-        if (payment) {
-          try {
-            await updatePaymentStatus(
-              payment.id,
-              "completed",
-              verification.transactionCode,
-              { verificationResponse: verification }
-            );
-          } catch (e) {
-            console.error("Error updating payment status:", e);
-          }
+        const payment =
+          (await getPaymentByReferenceId(input.referenceId || "")) ??
+          (await getPaymentByReferenceId(verification.transactionUuid || "")) ??
+          (await getPaymentByReferenceId(verification.transactionCode || ""));
+
+        if (!payment || payment.userId !== ctx.user.id) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No matching payment was found for this transaction",
+          });
         }
 
-        return { success: true, verification };
+        await updatePaymentStatus(
+          payment.id,
+          "completed",
+          verification.transactionCode,
+          { esewaVerification: verification }
+        );
+
+        const fulfilment = await fulfilPayment(payment as StoredPayment, {
+          productCode: verification.productCode,
+        });
+
+        return { success: true, verification, fulfilment };
       } catch (error) {
         console.error("eSewa verification error:", error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Payment verification failed",
@@ -148,31 +173,34 @@ export const paymentRouter = router({
         planId: z.number(),
         productName: z.string(),
         productDescription: z.string(),
-        amount: z.number(),
+        amount: z.number().optional(),
         customerEmail: z.string().email(),
         customerPhone: z.string(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        const plan = await getSubscriptionPlanById(input.planId);
+        if (!plan) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Plan not found" });
+        }
+
         const referenceId = generateKhaltiReferenceId(ctx.user.id, Date.now());
 
-        // Create payment record (we'll track by referenceId)
-        try {
-          await createPayment({
-            userId: ctx.user.id,
-            gateway: "khalti",
-            amount: input.amount,
-            description: input.productDescription,
-            referenceId,
-          });
-        } catch (e) {
-          console.error("Error creating payment record:", e);
-        }
+        // Create the payment record first: the webhook looks it up by
+        // referenceId, so an unrecorded payment could never be fulfilled.
+        const payment = await createPayment({
+          userId: ctx.user.id,
+          gateway: "khalti",
+          amount: plan.price,
+          description: input.productDescription,
+          referenceId,
+          metadata: { planId: plan.id, productName: input.productName },
+        });
 
         // Generate Khalti payment request
         const khaltiRequest = await createKhaltiPaymentRequest(KHALTI_CONFIG, {
-          amount: nprToKhalti(input.amount),
+          amount: nprToKhalti(plan.price),
           productName: input.productName,
           productDescription: input.productDescription,
           referenceId,
@@ -181,14 +209,21 @@ export const paymentRouter = router({
           customerPhone: input.customerPhone,
         });
 
+        // Khalti identifies the payment by pidx, not our referenceId, so record
+        // it: both the return redirect and the webhook look the row up by pidx.
+        if (khaltiRequest.pidx) {
+          await setPaymentPidx(payment.id, khaltiRequest.pidx);
+        }
+
         return {
-          paymentId: 0,
+          paymentId: payment.id,
           pidx: khaltiRequest.pidx,
           paymentUrl: khaltiRequest.paymentUrl,
           referenceId,
         };
       } catch (error) {
         console.error("Khalti payment initiation error:", error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to initiate Khalti payment",
@@ -196,12 +231,13 @@ export const paymentRouter = router({
       }
     }),
 
-  // Verify Khalti payment
+  // Verify Khalti payment. The payment row is found by the gateway pidx that
+  // we stored at checkout (older rows fall back to the referenceId).
   verifyKhaltiPayment: protectedProcedure
     .input(
       z.object({
         pidx: z.string(),
-        transactionId: z.string(),
+        transactionId: z.string().optional(),
         amount: z.number(),
       })
     )
@@ -209,7 +245,7 @@ export const paymentRouter = router({
       try {
         const verification = await verifyKhaltiPayment(KHALTI_CONFIG, {
           pidx: input.pidx,
-          transactionId: input.transactionId,
+          transactionId: input.transactionId ?? input.pidx,
           amount: input.amount,
         });
 
@@ -220,24 +256,30 @@ export const paymentRouter = router({
           });
         }
 
-        // Update payment status
-        const payment = await getPaymentByReferenceId(input.pidx);
-        if (payment) {
-          try {
-            await updatePaymentStatus(
-              payment.id,
-              "completed",
-              verification.transactionId,
-              { verificationResponse: verification }
-            );
-          } catch (e) {
-            console.error("Error updating payment status:", e);
-          }
+        const payment =
+          (await getPaymentByPidx(input.pidx)) ??
+          (await getPaymentByReferenceId(input.pidx));
+
+        if (!payment || payment.userId !== ctx.user.id) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No matching payment was found for this transaction",
+          });
         }
 
-        return { success: true, verification };
+        await updatePaymentStatus(
+          payment.id,
+          "completed",
+          verification.transactionId ?? input.transactionId,
+          { khaltiVerification: verification, pidx: input.pidx }
+        );
+
+        const fulfilment = await fulfilPayment(payment as StoredPayment);
+
+        return { success: true, verification, fulfilment };
       } catch (error) {
         console.error("Khalti verification error:", error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Payment verification failed",
@@ -258,6 +300,113 @@ export const paymentRouter = router({
     return getSubscriptionWithPlan(subscription.id);
   }),
 
+  // Get the user's full subscription history (active and past), newest first
+  getSubscriptionHistory: protectedProcedure.query(async ({ ctx }) => {
+    return getUserSubscriptions(ctx.user.id);
+  }),
+
+  // Turn auto-renewal on or off for an active subscription
+  setAutoRenew: protectedProcedure
+    .input(z.object({ subscriptionId: z.number(), autoRenew: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const subscription = await getSubscriptionWithPlan(input.subscriptionId);
+      if (!subscription || subscription.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (subscription.status !== "active") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Auto-renewal can only be changed on an active subscription",
+        });
+      }
+
+      const updated = await updateSubscription(input.subscriptionId, {
+        autoRenew: input.autoRenew,
+      });
+
+      return { success: true, autoRenew: updated?.autoRenew ?? input.autoRenew };
+    }),
+
+  // Switch an active subscription to a different plan (upgrade or downgrade).
+  // The new plan starts a fresh billing period from today.
+  changePlan: protectedProcedure
+    .input(z.object({ subscriptionId: z.number(), planId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const subscription = await getSubscriptionWithPlan(input.subscriptionId);
+      if (!subscription || subscription.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (subscription.status !== "active") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only an active subscription can change plans",
+        });
+      }
+
+      if (subscription.planId === input.planId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "You are already subscribed to this plan",
+        });
+      }
+
+      const plan = await getSubscriptionPlanById(input.planId);
+      if (!plan) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Plan not found" });
+      }
+
+      const renewalDate = new Date();
+      if (plan.interval === "monthly") {
+        renewalDate.setMonth(renewalDate.getMonth() + 1);
+      } else {
+        renewalDate.setFullYear(renewalDate.getFullYear() + 1);
+      }
+
+      const updated = await updateSubscription(input.subscriptionId, {
+        planId: input.planId,
+        endDate: renewalDate,
+        renewalDate,
+        canceledAt: null,
+      });
+
+      return { success: true, subscription: { ...updated, plan } };
+    }),
+
+  // Reactivate a subscription the user previously canceled
+  reactivateSubscription: protectedProcedure
+    .input(z.object({ subscriptionId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const subscription = await getSubscriptionWithPlan(input.subscriptionId);
+      if (!subscription || subscription.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (subscription.status === "active") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This subscription is already active",
+        });
+      }
+
+      const periodEnd = new Date();
+      if (subscription.plan?.interval === "yearly") {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      } else {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+      }
+
+      const updated = await updateSubscription(input.subscriptionId, {
+        status: "active",
+        canceledAt: null,
+        endDate: periodEnd,
+        renewalDate: periodEnd,
+      });
+
+      return { success: true, subscription: updated };
+    }),
+
   // Cancel subscription
   cancelSubscription: protectedProcedure
     .input(z.object({ subscriptionId: z.number() }))
@@ -268,6 +417,20 @@ export const paymentRouter = router({
       }
 
       await cancelSubscription(input.subscriptionId);
+
+      try {
+        if (ctx.user.email) {
+          await sendCancellationConfirmation(
+            ctx.user.name || "there",
+            ctx.user.email,
+            subscription.plan?.name ?? "PTEMaster"
+          );
+        }
+      } catch (error) {
+        // A cancelled subscription must not depend on an email being delivered.
+        console.error("Failed to send cancellation email:", error);
+      }
+
       return { success: true };
     }),
 });

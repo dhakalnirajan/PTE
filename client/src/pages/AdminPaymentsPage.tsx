@@ -1,22 +1,39 @@
 import { AdminLayout } from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Search, Loader2, CreditCard, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useState } from "react";
 
+const PAGE_SIZE = 50;
+
 export default function AdminPaymentsPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const { data: payments, isLoading } = trpc.systemAdmin.getActivityLogs.useQuery({ limit: 200, offset: 0 });
+  const [offset, setOffset] = useState(0);
 
-  const paymentTransactions = (payments || [])
-    .filter((log: any) => log.type?.includes("payment") || log.type?.includes("subscription"))
-    .slice(0, 50);
+  const { data, isLoading, isError } = trpc.systemAdmin.getRecentPayments.useQuery({
+    limit: PAGE_SIZE,
+    offset,
+  });
+  const { data: revenue } = trpc.systemAdmin.getPaymentRevenue.useQuery({ days: 30 });
 
-  const filteredPayments = paymentTransactions.filter(
-    (payment: any) =>
-      payment.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.userEmail?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const payments = data?.transactions ?? [];
+  const total = data?.total ?? 0;
+  const hasMore = data?.hasMore ?? false;
+
+  const filteredPayments = payments.filter((payment) => {
+    const term = searchTerm.toLowerCase();
+    if (!term) return true;
+    return (
+      (payment.userName ?? "").toLowerCase().includes(term) ||
+      (payment.userEmail ?? "").toLowerCase().includes(term) ||
+      (payment.transactionId ?? "").toLowerCase().includes(term) ||
+      String(payment.amount).includes(term)
+    );
+  });
+
+  const completedCount = payments.filter((p) => p.status === "completed").length;
+  const failedCount = payments.filter((p) => p.status === "failed").length;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -41,13 +58,13 @@ export default function AdminPaymentsPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600">Total Transactions</p>
-                  <p className="text-3xl font-bold mt-2">{paymentTransactions.length}</p>
+                  <p className="text-3xl font-bold mt-2">{total}</p>
                 </div>
                 <CreditCard className="w-12 h-12 text-blue-500 opacity-20" />
               </div>
@@ -58,10 +75,8 @@ export default function AdminPaymentsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Successful</p>
-                  <p className="text-3xl font-bold mt-2 text-green-600">
-                    {paymentTransactions.filter((p: any) => p.type?.includes("success")).length}
-                  </p>
+                  <p className="text-sm text-gray-600">Successful (this page)</p>
+                  <p className="text-3xl font-bold mt-2 text-green-600">{completedCount}</p>
                 </div>
                 <CheckCircle className="w-12 h-12 text-green-500 opacity-20" />
               </div>
@@ -74,10 +89,24 @@ export default function AdminPaymentsPage() {
                 <div>
                   <p className="text-sm text-gray-600">Failed</p>
                   <p className="text-3xl font-bold mt-2 text-red-600">
-                    {paymentTransactions.filter((p: any) => p.type?.includes("failed")).length}
+                    {revenue?.failedPayments ?? failedCount}
                   </p>
                 </div>
                 <XCircle className="w-12 h-12 text-red-500 opacity-20" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Revenue (30 days)</p>
+                  <p className="text-3xl font-bold mt-2">
+                    ₨{Number(revenue?.totalRevenue ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <CreditCard className="w-12 h-12 text-teal-500 opacity-20" />
               </div>
             </CardContent>
           </Card>
@@ -90,7 +119,7 @@ export default function AdminPaymentsPage() {
               <Search className="absolute left-3 top-3 text-gray-400" size={20} />
               <input
                 type="text"
-                placeholder="Search by email or transaction details..."
+                placeholder="Search by name, email, transaction ID or amount..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
@@ -102,13 +131,19 @@ export default function AdminPaymentsPage() {
         {/* Transactions Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Transactions</CardTitle>
-            <CardDescription>Latest payment activities</CardDescription>
+            <CardTitle>Transactions</CardTitle>
+            <CardDescription>
+              Newest first — search filters the {payments.length} loaded transactions
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="flex items-center justify-center h-96">
                 <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+              </div>
+            ) : isError ? (
+              <div className="text-center py-12">
+                <p className="text-red-600">Couldn't load payments. Please try again.</p>
               </div>
             ) : filteredPayments.length === 0 ? (
               <div className="text-center py-12">
@@ -121,46 +156,82 @@ export default function AdminPaymentsPage() {
                     <tr>
                       <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">User</th>
                       <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Email</th>
-                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Gateway</th>
                       <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Details</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Transaction ID</th>
                       <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {filteredPayments.map((payment: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    {filteredPayments.map((payment) => (
+                      <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
-                          <span className="font-medium text-gray-900">{payment.userName || "Unknown"}</span>
+                          <span className="font-medium text-gray-900">
+                            {payment.userName || `User #${payment.userId}`}
+                          </span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-gray-600">{payment.userEmail || "N/A"}</span>
+                          <span className="text-gray-600">{payment.userEmail || "—"}</span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
-                            {payment.type || "Payment"}
+                          <span className="font-semibold text-gray-900">
+                            ₨{payment.amount.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold capitalize">
+                            {payment.gateway}
                           </span>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            {getStatusIcon(payment.type)}
-                            <span className="text-sm font-medium text-gray-700">
-                              {payment.type?.includes("success") ? "Completed" : payment.type?.includes("failed") ? "Failed" : "Pending"}
+                            {getStatusIcon(payment.status)}
+                            <span className="text-sm font-medium text-gray-700 capitalize">
+                              {payment.status}
                             </span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-sm text-gray-600">{payment.description || "N/A"}</span>
+                          <span className="text-xs text-gray-600 font-mono">
+                            {payment.transactionId || "—"}
+                          </span>
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-sm text-gray-600">
-                            {new Date(payment.timestamp).toLocaleDateString()}
+                            {new Date(payment.createdAt).toLocaleDateString()}
                           </span>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {(hasMore || offset > 0) && (
+              <div className="flex items-center justify-between pt-6">
+                <p className="text-sm text-gray-600">
+                  Showing {offset + 1}–{offset + payments.length} of {total} transactions
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={offset === 0}
+                    onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!hasMore}
+                    onClick={() => setOffset(offset + PAGE_SIZE)}
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

@@ -178,8 +178,13 @@ patches/wouter@3.7.1.patch  Wouter Switch route introspection patch
 - `server/admin/adminAuth.ts` — never imported (role enforced inline).
 - `server/_core/{imageGeneration,map,dataApi}.ts` — no importers.
 - eSewa MD5 signs with a hardcoded test secret `"8gBm/:&EnhH.1/q"`.
-- `paymentRouter.initiateESewaPayment` hardcodes `amount: 1000` NPR and
-  returns `paymentId: 0`.
+- `paymentRouter.initiateESewaPayment` now charges the plan price and returns
+  the real `payments.id` (fixed; see CHANGELOG.md).
 - `normalizeToPTE` comment says S-curve but implementation is linear.
 - Seed scripts and legacy migrations target MySQL; runtime schema is PostgreSQL.
-- `/admin/analytics` and `/admin/settings` menu items have no routes in App.tsx.
+- Admin menu items are all routed now: `/admin/analytics` renders
+  `AdminAnalyticsPage`; the settings item points at `/system-admin`.
+  `AdminDashboardPage` was deleted as a duplicate of `AdminDashboard`.
+  Remaining known gaps (see CHANGELOG.md): no scheduler for subscription
+  auto-renewal/renewal reminders, no admin plan-management UI, and the user-data
+  isolation audit is still outstanding.

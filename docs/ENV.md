@@ -28,8 +28,10 @@ object in `server/_core/env.ts`. Client-visible vars are `VITE_`-prefixed.
 | `ESEWA_MERCHANT_CODE` | `TESTMERCHANT` (`ESEWA_CONFIG.merchantCode`) | eSewa initiate/verify | no |
 | `KHALTI_PUBLIC_KEY` | `test_public_key` (`KHALTI_CONFIG.publicKey`) | Khalti initiate (Key header) | no |
 | `KHALTI_SECRET_KEY` | `test_secret_key` | Khalti lookup + optional webhook HMAC | no |
-| `RESEND_API_KEY` | — | email service (stub, dead code) | no |
-| `SENDER_EMAIL` | `noreply@ptepractice.com` | email templates (stub) | no |
+| `RESEND_API_KEY` | — | Resend API key for transactional email (`server/email/emailService.ts`). When unset, sends are skipped and logged, and the admin health panel reports Email as not configured. | no |
+| `SENDER_EMAIL` | `noreply@ptepractice.com` | `from` address on every email | no |
+| `SENDER_NAME` | `PTEMaster` | display name on every email | no |
+| `CRON_SECRET` | — | bearer token securing `POST /api/cron/*` for manual/local invocation. On Vercel, scheduled runs authenticate via the `x-vercel-cron` header instead, so this is only needed outside Vercel Cron. | no |
 
 ## `.env.example` contents
 

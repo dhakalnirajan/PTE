@@ -283,9 +283,10 @@
 - [x] Implement adminProcedure for role-based access control
 - [x] Add admin check middleware to all admin routes
 - [x] Create pricing page with subscription plans
-- [ ] Add subscription checkout flow (eSewa/Khalti hosted checkout — verify live integration)
-- [ ] Add subscription management page (view current plan, upgrade/downgrade, cancel)
+- [x] Add subscription checkout flow (eSewa/Khalti hosted checkout; return routes now exist and verify + fulfil the payment)
+- [x] Add subscription management page (view current plan, upgrade/downgrade, cancel) — /payments
 - [ ] Write admin panel integration tests
+- [ ] Verify the hosted checkout against live/sandbox gateway credentials
 - [x] All tests passing, 0 TypeScript errors
 
 
@@ -313,14 +314,14 @@
 - [x] Integrate AdminUserManagement component into admin panel
 - [x] Integrate AdminAnalytics component into admin panel
 - [x] Add PaymentHistory route to App.tsx
-- [x] Create email service with payment receipt, renewal reminder, welcome, and cancellation emails
+- [x] Create email service with payment receipt, renewal reminder, welcome, and cancellation emails (now really sends via the Resend HTTP API; receipt + welcome fire on fulfilment, cancellation fires on cancel)
 - [x] Create public pricing page with plan comparison and FAQ
 - [x] Add Pricing route to App.tsx
 - [x] Implement email notification helpers for payment and subscription events
-- [ ] Implement admin procedures for user management (ban, promote, view details) (ban = toggleUserBan done; promote/view missing)
+- [x] Implement admin procedures for user management (ban, promote, view details) — toggleUserBan/setUserBan/setUserRole/getUsers/getRecentPayments
 - [x] Implement admin procedures for analytics queries
-- [ ] Implement subscription auto-renewal background job (no scheduler exists — email reminders only)
-- [ ] Add subscription management page for users
+- [x] Implement subscription auto-renewal background job — server/jobs/subscriptionJobs.ts (reminders 3-day window, idempotent via reminderSentAt; auto-renew period rolls forward with a pending ledger row; non-renewing subs expire). Triggered via POST /api/cron/subscriptions (vercel.json crons, every 6h, or Bearer CRON_SECRET) and a 6h interval on the Node server. Note: gateways can't charge off-session, so renewal collection still needs the user to pay — the pending ledger row is the reconciliation hook.
+- [x] Add subscription management page for users — /payments (plan, usage, change plan, cancel, reactivate, auto-renew, history, receipts)
 - [ ] Create subscription plan management UI for admins
 
 
@@ -363,8 +364,8 @@
 - [x] Implemented empty state handling for no data scenarios
 - [x] Created system statistics KPI cards (Users, Subscriptions, Revenue, Failed Payments)
 - [x] Built 6-tab admin interface (Health, Users, Content, Settings, Logs, Alerts)
-- [x] Integrated real-time alerts dashboard with severity levels (error, warning, info)
-- [x] Added user search functionality with query input
+- [x] Integrated real-time alerts dashboard with severity levels (error, warning, info) — alerts are now derived from live signals and acknowledgements persist (see Phase 20)
+- [x] Added user search functionality with query input — wired to systemAdmin.getUsers in Phase 20 (it filtered nothing before)
 - [x] Implemented activity logs with timestamp and status tracking
 - [x] Added service status monitoring with uptime tracking
 - [x] All 84 tests passing, zero TypeScript errors
@@ -372,15 +373,47 @@
 
 ## Phase 19 — Comprehensive Analytics Dashboard
 
-- [ ] Create database queries for user engagement metrics (DAU, MAU, WAU, login patterns)
-- [ ] Create database queries for learning performance metrics (avg scores, improvement trends, weak areas)
-- [ ] Create database queries for payment/revenue metrics (MRR, ARR, subscription breakdown, CLV)
-- [ ] Create database queries for system health metrics (uptime, error rates, API response times)
-- [ ] Build admin procedures for analytics data retrieval
-- [ ] Create comprehensive analytics dashboard UI with all metric sections
-- [ ] Add line charts for engagement trends and revenue over time
-- [ ] Add bar charts for score distribution and task type performance
-- [ ] Add pie charts for subscription breakdown and payment method distribution
-- [ ] Implement date range filtering (7 days, 30 days, 90 days, custom)
+- [x] Create database queries for user engagement metrics (DAU, MAU, WAU, login patterns) — analyticsDb.getUserEngagementMetrics
+- [x] Create database queries for learning performance metrics (avg scores, improvement trends, weak areas)
+- [x] Create database queries for payment/revenue metrics (MRR, ARR, subscription breakdown, CLV)
+- [x] Create database queries for system health metrics — adminDb.getPerformanceMetrics (measured DB latency, 24h activity, payment-failure rate, heap, uptime). API response times and CPU are not available without a monitoring service and are no longer faked.
+- [x] Build admin procedures for analytics data retrieval
+- [x] Create comprehensive analytics dashboard UI with all metric sections — AdminAnalytics (the mock duplicate was deleted)
+- [x] Add line charts for engagement trends and revenue over time
+- [x] Add bar charts for score distribution and task type performance
+- [x] Add pie charts for subscription breakdown and payment method distribution
+- [ ] Implement date range filtering — 7/30/90 day presets work, custom range still missing
 - [ ] Add CSV/PDF export functionality for reports
 - [ ] Test all analytics features end-to-end
+
+
+## Phase 20 — Functional CRUD Completion (DONE 2026-09-16)
+
+Full detail in docs/CHANGELOG.md.
+
+- [x] Payment lifecycle completes: webhooks mounted at /api/webhooks/payment; shared server/payment/fulfilment.ts creates the subscription, links the payment and emails the receipt (idempotent)
+- [x] Gateway return pages: /payment/esewa/success, /payment/esewa/failure, /payment/khalti/callback verify the transaction and grant access
+- [x] Checkout stores planId in payment metadata; Khalti pidx persisted; eSewa amount taken from the plan (no longer hardcoded 1000); real paymentId returned
+- [x] User subscription management: /payments (changePlan, cancelSubscription, reactivateSubscription, setAutoRenew, history, receipts)
+- [x] Email really sends through the Resend HTTP API (receipt, welcome, cancellation wired; no more fake message ids)
+- [x] Admin backups: real row-count snapshot, history, delete
+- [x] Admin API keys: hashed secrets, create, rotate, revoke, delete
+- [x] Admin alerts: derived from live signals, acknowledge/reopen persisted
+- [x] Admin performance metrics: measured DB latency, 24h activity, payment-failure rate, heap, uptime
+- [x] Admin config: system_config CRUD; content tab shows real question counts per section
+- [x] Admin users: real list/search/ban/promote; AdminUsersPage + AdminPaymentsPage read the right procedures
+- [x] Deleted the mock AdminAnalytics component and the mock health-metrics function; removed fabricated stats
+- [x] Deleted the duplicate AdminDashboardPage (one dashboard component, two routes) and fixed the dead /admin/analytics and /admin/settings nav links
+- [x] 84 tests passing, 0 TypeScript errors
+
+- [x] First-time walkthrough tour: WalkthroughTour component (spotlight backdrop, target-anchored popover with auto-placement, scroll-into-view, keyboard accessible, localStorage persistence, interactive step) with a six-step dashboard tour and a replay control on Profile
+
+### Still open
+
+- [x] Auto-renewal / renewal-reminder scheduler — done (see Phase 20 job item). Remaining sub-task: collecting pending renewal payments still requires the user to pay (no off-session charging on eSewa/Khalti).
+- [ ] Verify eSewa/Khalti against live/sandbox credentials with a public callback URL
+- [ ] Set RESEND_API_KEY + verified sending domain so receipts leave the system
+- [ ] Admin subscription plan management UI
+- [ ] Admin panel integration tests
+- [ ] User-data isolation audit (per-user WHERE, session/SRS isolation, audio upload namespacing)
+- [ ] Reset the admin-content tab: question upload/edit UI (currently read-only counts)

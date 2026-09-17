@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { AnimatedProgressBar } from "@/components/AnimatedProgressBar";
+import WalkthroughTour, { resetTour, type TourStep } from "@/components/WalkthroughTour";
 import { pageVariants, staggerContainer, staggerItem, cardHover } from "@/lib/animations";
 
 const NAV_ITEMS = [
@@ -65,6 +66,7 @@ function Sidebar({ currentPath }: { currentPath: string }) {
           return (
             <Link key={href} href={href}>
               <div
+                data-tour={href === "/practice" ? "tour-nav-practice" : undefined}
                 className="flex items-center gap-3 py-2.5 text-sm cursor-pointer transition-all"
                 style={{
                   paddingLeft: isActive ? "17px" : "20px",
@@ -98,6 +100,54 @@ function Sidebar({ currentPath }: { currentPath: string }) {
     </aside>
   );
 }
+
+const DASHBOARD_TOUR_ID = "dashboard";
+
+const DASHBOARD_TOUR_STEPS: TourStep[] = [
+  {
+    target: "tour-welcome-banner",
+    title: "Your target at a glance",
+    content:
+      "This banner tracks the score you are working toward and how many days you have left to prepare.",
+    side: "bottom",
+  },
+  {
+    target: "tour-nav-practice",
+    title: "Start a practice session",
+    content:
+      "Every PTE task type lives here. Pick a task and the AI scores your response against the official Pearson criteria in seconds.",
+    side: "right",
+  },
+  {
+    target: "tour-study-stats",
+    title: "Track your study stats",
+    content:
+      "Daily streaks, total questions practiced and active days update automatically as you practice.",
+    side: "top",
+  },
+  {
+    target: "tour-today-target",
+    title: "Set a daily target",
+    content:
+      "Tell the coach how many minutes you want to study today. Try it now: click the button and the tour will continue.",
+    side: "left",
+    advanceOn: "[data-tour-target-cta]",
+  },
+  {
+    target: "tour-quick-practice",
+    title: "One-click quick practice",
+    content:
+      "Jump straight into the highest-value tasks: Read Aloud, Write Essay and Write from Dictation.",
+    side: "left",
+  },
+  {
+    target: "tour-study-tools",
+    title: "Your study toolkit",
+    content:
+      "Mock tests simulate the real exam, Study Modes adapt to your level, and Analytics shows exactly where to improve next.",
+    side: "top",
+  },
+];
 
 export default function Dashboard() {
   const { user, isAuthenticated, loading } = useAuth();
@@ -154,6 +204,9 @@ export default function Dashboard() {
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "#F5F7FA" }}>
+      {/* First-time walkthrough: auto-starts once, persisted in localStorage.
+          Re-launchable from Profile > "Replay dashboard tour". */}
+      <WalkthroughTour tourId={DASHBOARD_TOUR_ID} steps={DASHBOARD_TOUR_STEPS} finishLabel="Start Practicing" />
       <Sidebar currentPath={location} />
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
@@ -184,6 +237,7 @@ export default function Dashboard() {
           >
             {/* Exam banner */}
             <motion.div
+              data-tour="tour-welcome-banner"
               className="rounded-xl p-4 text-white flex items-center justify-between"
               style={{ background: "linear-gradient(135deg, #26C6DA 0%, #00ACC1 100%)" }}
               initial={{ opacity: 0, y: -10 }}
@@ -205,7 +259,7 @@ export default function Dashboard() {
 
             <div className="grid lg:grid-cols-3 gap-5">
               {/* Study Stats */}
-              <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 p-5">
+              <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 p-5" data-tour="tour-study-stats">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-semibold text-gray-900">Study Stats</h2>
                   <Link href="/analytics"><span className="text-xs flex items-center gap-1 cursor-pointer" style={{ color: "#26C6DA" }}>Study Centre <ChevronRight className="w-3 h-3" /></span></Link>
@@ -261,7 +315,7 @@ export default function Dashboard() {
               {/* Right column */}
               <div className="space-y-4">
                 {/* Today's target */}
-                <div className="bg-white rounded-xl border border-gray-100 p-4">
+                <div className="bg-white rounded-xl border border-gray-100 p-4" data-tour="tour-today-target">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-gray-900">Today's Target</h3>
                     <Clock className="w-4 h-4 text-gray-400" />
@@ -282,7 +336,7 @@ export default function Dashboard() {
                   ) : (
                     <div className="text-center py-2">
                       <p className="text-xs text-gray-500 mb-2">No target set for today</p>
-                      <button onClick={() => generateTarget.mutate({ targetMinutes: 30 })} className="text-xs px-3 py-1.5 rounded-lg text-white font-medium" style={{ backgroundColor: "#26C6DA" }}>
+                      <button data-tour-target-cta onClick={() => generateTarget.mutate({ targetMinutes: 30 })} className="text-xs px-3 py-1.5 rounded-lg text-white font-medium" style={{ backgroundColor: "#26C6DA" }}>
                         Set 30-min Target
                       </button>
                     </div>
@@ -290,7 +344,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Quick Practice */}
-                <div className="bg-white rounded-xl border border-gray-100 p-4">
+                <div className="bg-white rounded-xl border border-gray-100 p-4" data-tour="tour-quick-practice">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Practice</h3>
                   <div className="space-y-2">
                     {[
@@ -312,7 +366,7 @@ export default function Dashboard() {
             </div>
 
             {/* Study Tools */}
-            <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <div className="bg-white rounded-xl border border-gray-100 p-5" data-tour="tour-study-tools">
               <h2 className="font-semibold text-gray-900 mb-4">Study Tools</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[

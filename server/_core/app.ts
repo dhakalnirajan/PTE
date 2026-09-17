@@ -4,6 +4,8 @@ import { appRouter } from "../routers";
 import { registerAuthRoutes } from "./authRoutes";
 import { createContext } from "./context";
 import { sdk } from "./sdk";
+import paymentWebhookRouter from "../webhooks/paymentWebhook";
+import cronRouter from "./cronRoutes";
 
 export function createApp(): Express {
   const app = express();
@@ -41,6 +43,12 @@ export function createApp(): Express {
       }
     }
   );
+
+  // Gateway callbacks: mark the payment completed and create the subscription.
+  app.use("/api/webhooks/payment", paymentWebhookRouter);
+
+  // Scheduled jobs (Vercel Cron / bearer-token secured).
+  app.use("/api/cron", cronRouter);
 
   app.use(
     "/api/trpc",

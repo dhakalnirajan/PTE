@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Settings, Target, Bell, User, Save, Trophy, Clock } from "lucide-react";
+import { Settings, Target, Bell, User, Save, Trophy, Clock, RotateCcw } from "lucide-react";
+import { resetTour } from "@/components/WalkthroughTour";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -198,6 +199,19 @@ export default function Profile() {
         >
           <Save className="w-4 h-4 mr-2" />
           {updateProfile.isPending ? "Saving..." : "Save Settings"}
+        </Button>
+
+        {/* Replay the first-time walkthrough */}
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            resetTour("dashboard");
+            window.location.href = "/dashboard";
+          }}
+        >
+          <RotateCcw className="w-4 h-4 mr-2" />
+          Replay Dashboard Tour
         </Button>
       </div>
     </PTELayout>

@@ -1,311 +1,353 @@
 import { useState } from "react";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, AreaChart, Area,
-} from "recharts";
-import {
-  TrendingUp, Users, UserCheck, UserX, DollarSign, Activity, Target,
-} from "lucide-react";
-import { motion } from "framer-motion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Loader2 } from "lucide-react";
 
-interface AnalyticsData {
-  dau: number;
-  mau: number;
-  churnRate: number;
-  ltv: number;
-  avgSessionDuration: number;
-  conversionRate: number;
-  retentionRate: number;
-}
+/**
+ * Admin analytics dashboard. Every panel is backed by live data from the
+ * `systemAdmin` analytics procedures — there is no static/sample data here.
+ */
+export default function AdminAnalytics() {
+  const [days, setDays] = useState(30);
 
-interface AdminAnalyticsProps {
-  data?: AnalyticsData;
-}
+  // Fetch all analytics data
+  const { data: engagement, isLoading: engagementLoading } = trpc.systemAdmin.getUserEngagement.useQuery({ days });
+  const { data: performance, isLoading: performanceLoading } = trpc.systemAdmin.getLearningPerformance.useQuery({ days });
+  const { data: revenue, isLoading: revenueLoading } = trpc.systemAdmin.getPaymentRevenue.useQuery({ days });
+  const { data: churn, isLoading: churnLoading } = trpc.systemAdmin.getChurnRetention.useQuery({ days });
+  const { data: clv, isLoading: clvLoading } = trpc.systemAdmin.getCustomerLTV.useQuery();
 
-export default function AdminAnalytics({ data }: AdminAnalyticsProps) {
-  // Mock data
-  const mockData = {
-    dau: 342,
-    mau: 1234,
-    churnRate: 8.5,
-    ltv: 4500,
-    avgSessionDuration: 24,
-    conversionRate: 37,
-    retentionRate: 65,
-  };
+  const isLoading = engagementLoading || performanceLoading || revenueLoading || churnLoading || clvLoading;
 
-  const analyticsData = data || mockData;
-
-  // User growth data
-  const userGrowthData = [
-    { date: "Mar 1", users: 800, active: 450 },
-    { date: "Mar 3", users: 950, active: 520 },
-    { date: "Mar 5", users: 1100, active: 610 },
-    { date: "Mar 7", users: 1200, active: 680 },
-    { date: "Mar 9", users: 1234, active: 750 },
-    { date: "Mar 11", users: 1234, active: 342 },
-  ];
-
-  // Retention cohort
-  const retentionData = [
-    { week: "Week 1", retention: 100, day7: 78, day14: 62, day30: 45 },
-    { week: "Week 2", retention: 100, day7: 82, day14: 68, day30: 52 },
-    { week: "Week 3", retention: 100, day7: 85, day14: 72 },
-    { week: "Week 4", retention: 100, day7: 88 },
-  ];
-
-  // Revenue data
-  const revenueData = [
-    { date: "Mar 1", revenue: 8000, subscriptions: 120 },
-    { date: "Mar 3", revenue: 12000, subscriptions: 180 },
-    { date: "Mar 5", revenue: 15000, subscriptions: 220 },
-    { date: "Mar 7", revenue: 18000, subscriptions: 260 },
-    { date: "Mar 9", revenue: 22000, subscriptions: 310 },
-    { date: "Mar 11", revenue: 25000, subscriptions: 350 },
-  ];
-
-  // Engagement distribution
-  const engagementData = [
-    { name: "Highly Engaged", value: 35, color: "#14b8a6" },
-    { name: "Moderately Engaged", value: 45, color: "#06b6d4" },
-    { name: "Low Engagement", value: 15, color: "#64748b" },
-    { name: "Inactive", value: 5, color: "#334155" },
-  ];
-
-  const KPICard = ({ icon: Icon, label, value, trend, color }: any) => (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
-      <Card className="bg-slate-700 border-slate-600">
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-slate-400 mb-1">{label}</p>
-              <p className="text-2xl font-bold text-white">{value}</p>
-              {trend && (
-                <p className={`text-xs mt-2 ${trend > 0 ? "text-green-400" : "text-red-400"}`}>
-                  {trend > 0 ? "↑" : "↓"} {Math.abs(trend)}% vs last week
-                </p>
-              )}
-            </div>
-            <div className={`w-12 h-12 rounded-lg ${color} flex items-center justify-center`}>
-              <Icon className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          icon={Users}
-          label="Daily Active Users"
-          value={analyticsData.dau.toLocaleString()}
-          trend={12}
-          color="bg-blue-500"
-        />
-        <KPICard
-          icon={UserCheck}
-          label="Monthly Active Users"
-          value={analyticsData.mau.toLocaleString()}
-          trend={8}
-          color="bg-teal-500"
-        />
-        <KPICard
-          icon={UserX}
-          label="Churn Rate"
-          value={`${analyticsData.churnRate}%`}
-          trend={-2}
-          color="bg-red-500"
-        />
-        <KPICard
-          icon={DollarSign}
-          label="Lifetime Value"
-          value={`₨${(analyticsData.ltv / 1000).toFixed(1)}K`}
-          trend={15}
-          color="bg-green-500"
-        />
+      {/* Date Range Selector */}
+      <div className="flex gap-2">
+        {[7, 30, 90].map((d) => (
+          <button
+            key={d}
+            onClick={() => setDays(d)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              days === d
+                ? "bg-teal-600 text-white"
+                : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+            }`}
+          >
+            Last {d} days
+          </button>
+        ))}
       </div>
 
-      {/* User Growth Chart */}
-      <Card className="bg-slate-700 border-slate-600">
-        <CardHeader>
-          <CardTitle className="text-white">User Growth Trend</CardTitle>
-          <CardDescription>Total users vs daily active users over time</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={userGrowthData}>
-              <defs>
-                <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-              <XAxis dataKey="date" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" />
-              <Tooltip
-                contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569" }}
-                labelStyle={{ color: "#e2e8f0" }}
-              />
-              <Area
-                type="monotone"
-                dataKey="users"
-                stroke="#14b8a6"
-                fillOpacity={1}
-                fill="url(#colorUsers)"
-                name="Total Users"
-              />
-              <Area
-                type="monotone"
-                dataKey="active"
-                stroke="#06b6d4"
-                fillOpacity={1}
-                fill="url(#colorActive)"
-                name="Active Users"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      {isLoading ? (
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+        </div>
+      ) : (
+        <Tabs defaultValue="engagement" className="w-full">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="engagement">Engagement</TabsTrigger>
+            <TabsTrigger value="performance">Performance</TabsTrigger>
+            <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            <TabsTrigger value="churn">Churn</TabsTrigger>
+            <TabsTrigger value="ltv">LTV</TabsTrigger>
+          </TabsList>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Chart */}
-        <Card className="bg-slate-700 border-slate-600">
-          <CardHeader>
-            <CardTitle className="text-white">Revenue Trend</CardTitle>
-            <CardDescription>Monthly recurring revenue and new subscriptions</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                <XAxis dataKey="date" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569" }}
-                  labelStyle={{ color: "#e2e8f0" }}
-                />
-                <Legend />
-                <Bar dataKey="revenue" fill="#14b8a6" name="Revenue (₨)" />
-                <Bar dataKey="subscriptions" fill="#06b6d4" name="New Subscriptions" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Engagement Distribution */}
-        <Card className="bg-slate-700 border-slate-600">
-          <CardHeader>
-            <CardTitle className="text-white">User Engagement</CardTitle>
-            <CardDescription>Distribution of user engagement levels</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={engagementData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {engagementData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569" }}
-                  labelStyle={{ color: "#e2e8f0" }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Retention Cohort */}
-      <Card className="bg-slate-700 border-slate-600">
-        <CardHeader>
-          <CardTitle className="text-white">Retention Cohort Analysis</CardTitle>
-          <CardDescription>User retention rates by cohort week</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-600">
-                  <th className="px-4 py-2 text-left text-sm font-semibold text-slate-300">Cohort</th>
-                  <th className="px-4 py-2 text-center text-sm font-semibold text-slate-300">Week 0</th>
-                  <th className="px-4 py-2 text-center text-sm font-semibold text-slate-300">Day 7</th>
-                  <th className="px-4 py-2 text-center text-sm font-semibold text-slate-300">Day 14</th>
-                  <th className="px-4 py-2 text-center text-sm font-semibold text-slate-300">Day 30</th>
-                </tr>
-              </thead>
-              <tbody>
-                {retentionData.map((row, i) => (
-                  <tr key={i} className="border-b border-slate-600 hover:bg-slate-600/50">
-                    <td className="px-4 py-3 text-sm font-medium text-white">{row.week}</td>
-                    <td className="px-4 py-3 text-center">
-                      <Badge className="bg-teal-500">{row.retention}%</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <Badge className="bg-teal-600">{row.day7}%</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {row.day14 && <Badge className="bg-teal-700">{row.day14}%</Badge>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {row.day30 && <Badge className="bg-teal-800">{row.day30}%</Badge>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Key Metrics Summary */}
-      <Card className="bg-slate-700 border-slate-600">
-        <CardHeader>
-          <CardTitle className="text-white">Key Performance Metrics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-slate-600 rounded-lg">
-              <p className="text-sm text-slate-400 mb-2">Avg Session Duration</p>
-              <p className="text-2xl font-bold text-white">{analyticsData.avgSessionDuration} min</p>
-              <p className="text-xs text-teal-400 mt-2">↑ 5% from last week</p>
+          {/* User Engagement Tab */}
+          <TabsContent value="engagement" className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Total Users</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{engagement?.totalUsers || 0}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Active Users (Last {days}d)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{engagement?.activeUsers || 0}</div>
+                </CardContent>
+              </Card>
             </div>
-            <div className="p-4 bg-slate-600 rounded-lg">
-              <p className="text-sm text-slate-400 mb-2">Conversion Rate</p>
-              <p className="text-2xl font-bold text-white">{analyticsData.conversionRate}%</p>
-              <p className="text-xs text-teal-400 mt-2">↑ 3% from last week</p>
+
+            {/* DAU Chart */}
+            {engagement?.dau && engagement.dau.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Daily Active Users</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={engagement.dau}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="count" stroke="#0088FE" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Login Frequency */}
+            {engagement?.loginFrequency && engagement.loginFrequency.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>User Activity Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {engagement.loginFrequency.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-center">
+                        <span className="text-sm">{item.frequency}</span>
+                        <span className="font-bold">{item.userCount} users</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Learning Performance Tab */}
+          <TabsContent value="performance" className="space-y-4">
+            {/* Score Distribution */}
+            {performance?.scoreDistribution && performance.scoreDistribution.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Score Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={performance.scoreDistribution}
+                        dataKey="count"
+                        nameKey="band"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={100}
+                        label
+                      >
+                        {performance.scoreDistribution.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Scores by Task Type */}
+            {performance?.scoresByTaskType && performance.scoresByTaskType.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Average Scores by Task Type</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={performance.scoresByTaskType}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="taskType" angle={-45} textAnchor="end" height={100} />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="avgScore" fill="#00C49F" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Weak Areas */}
+            {performance?.weakAreas && performance.weakAreas.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Weak Areas (Lowest Scores)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {performance.weakAreas.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-center p-2 bg-red-50 rounded">
+                        <span className="font-medium">{item.taskType}</span>
+                        <div className="text-right">
+                          <div className="font-bold">{(item.avgScore || 0).toFixed(1)}</div>
+                          <div className="text-xs text-gray-600">{item.attempts} attempts</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Revenue Tab */}
+          <TabsContent value="revenue" className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Total Revenue</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">NPR {(revenue?.totalRevenue || 0).toLocaleString()}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Failed Payments</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-red-600">{revenue?.failedPayments || 0}</div>
+                </CardContent>
+              </Card>
             </div>
-            <div className="p-4 bg-slate-600 rounded-lg">
-              <p className="text-sm text-slate-400 mb-2">Retention Rate</p>
-              <p className="text-2xl font-bold text-white">{analyticsData.retentionRate}%</p>
-              <p className="text-xs text-teal-400 mt-2">↑ 2% from last week</p>
+
+            {/* Revenue by Method */}
+            {revenue?.revenueByMethod && revenue.revenueByMethod.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Revenue by Payment Method</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={revenue.revenueByMethod}
+                        dataKey="total"
+                        nameKey="method"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={100}
+                        label
+                      >
+                        {revenue.revenueByMethod.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Daily Revenue */}
+            {revenue?.dailyRevenue && revenue.dailyRevenue.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Daily Revenue Trend</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={revenue.dailyRevenue}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="total" stroke="#FFBB28" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Subscription Breakdown */}
+            {revenue?.subscriptionBreakdown && revenue.subscriptionBreakdown.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Active Subscriptions by Plan</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {revenue.subscriptionBreakdown.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-center p-2 bg-blue-50 rounded">
+                        <span className="font-medium">{item.plan}</span>
+                        <div className="text-right">
+                          <div className="font-bold">{item.count} active</div>
+                          <div className="text-xs text-gray-600">MRR: NPR {(item.totalMrr || 0).toLocaleString()}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Churn Tab */}
+          <TabsContent value="churn" className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Active Subscriptions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-green-600">{churn?.active || 0}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Churned (Last {days}d)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-red-600">{churn?.churned || 0}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Churn Rate</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{(churn?.churnRate || 0).toFixed(2)}%</div>
+                </CardContent>
+              </Card>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </TabsContent>
+
+          {/* LTV Tab */}
+          <TabsContent value="ltv" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Average Customer Lifetime Value</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-4xl font-bold text-teal-600">NPR {(clv?.averageClv || 0).toLocaleString()}</div>
+              </CardContent>
+            </Card>
+
+            {clv?.topCustomers && clv.topCustomers.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top 10 Customers by LTV</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {clv.topCustomers.slice(0, 10).map((customer: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                        <span className="text-sm">User #{customer.userId}</span>
+                        <div className="text-right">
+                          <div className="font-bold">NPR {(customer.totalSpent || 0).toLocaleString()}</div>
+                          <div className="text-xs text-gray-600">{customer.transactionCount} transactions</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

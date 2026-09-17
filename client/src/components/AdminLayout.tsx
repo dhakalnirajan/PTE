@@ -24,7 +24,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { label: "Users", icon: Users, href: "/admin/users" },
     { label: "Payments", icon: CreditCard, href: "/admin/payments" },
     { label: "Analytics", icon: BarChart3, href: "/admin/analytics" },
-    { label: "Settings", icon: Settings, href: "/admin/settings" },
+    { label: "System Admin", icon: Settings, href: "/system-admin" },
   ];
 
   const isActive = (href: string) => location === href;

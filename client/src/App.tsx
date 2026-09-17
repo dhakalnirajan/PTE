@@ -15,10 +15,14 @@ import AuthCallback from "./pages/AuthCallback";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const PaymentHistory = lazy(() => import("./pages/PaymentHistory"));
-const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
+const AdminAnalyticsPage = lazy(() => import("./pages/AdminAnalyticsPage"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
 const AdminPaymentsPage = lazy(() => import("./pages/AdminPaymentsPage"));
 const Pricing = lazy(() => import("./pages/Pricing"));
+const FeaturesPage = lazy(() => import("./pages/FeaturesPage"));
+const ExamStructurePage = lazy(() => import("./pages/ExamStructurePage"));
+const ScoreGuidePage = lazy(() => import("./pages/ScoreGuidePage"));
+const PaymentReturn = lazy(() => import("./pages/PaymentReturn"));
 const SystemAdminPanel = lazy(() => import("./pages/SystemAdminPanel"));
 const Practice = lazy(() => import("./pages/Practice"));
 const PracticeSession = lazy(() => import("./pages/PracticeSession"));
@@ -66,11 +70,24 @@ function Router() {
         <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/admin" component={AdminDashboard} />
-        <Route path="/admin/dashboard" component={AdminDashboardPage} />
+        <Route path="/admin/dashboard" component={AdminDashboard} />
+        <Route path="/admin/analytics" component={AdminAnalyticsPage} />
         <Route path="/admin/users" component={AdminUsersPage} />
         <Route path="/admin/payments" component={AdminPaymentsPage} />
         <Route path="/payments" component={PaymentHistory} />
         <Route path="/pricing" component={Pricing} />
+        <Route path="/features" component={FeaturesPage} />
+        <Route path="/exam-structure" component={ExamStructurePage} />
+        <Route path="/score-guide" component={ScoreGuidePage} />
+        <Route path="/payment/esewa/success">
+          <PaymentReturn flow="esewa-success" />
+        </Route>
+        <Route path="/payment/esewa/failure">
+          <PaymentReturn flow="esewa-failure" />
+        </Route>
+        <Route path="/payment/khalti/callback">
+          <PaymentReturn flow="khalti-callback" />
+        </Route>
         <Route path="/system-admin" component={SystemAdminPanel} />
         <Route path="/practice" component={Practice} />
         <Route path="/practice/:section" component={Practice} />

@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+/* Fonts (Sora display + Inter body) are loaded via <link> in client/index.html,
+   with preconnect and display=swap. Do not add @import url(...) here: CSS
+   @import must precede all other statements, and Tailwind's inlined layers
+   break that ordering. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -124,13 +127,28 @@
   --sidebar-ring: oklch(0.65 0.22 330);
 }
 
+@theme inline {
+  /* Typography pair: Sora (geometric display) for headlines, Inter for body */
+  --font-display: 'Sora', 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  }
+  .font-display {
+    font-family: 'Sora', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  /* Accessible focus ring for keyboard users only */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
   }
 
   /* PTE Score animations */

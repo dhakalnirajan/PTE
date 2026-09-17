@@ -34,6 +34,8 @@ export interface ESewaPaymentResponse {
 export interface ESewaVerificationResponse {
   success: boolean;
   transactionCode?: string;
+  /** eSewa echoes the `pid` we sent (our payment referenceId) as transaction_uuid */
+  transactionUuid?: string;
   status?: string;
   totalAmount?: number;
   productCode?: string;
@@ -119,6 +121,7 @@ export async function verifyESewaPayment(
       return {
         success: true,
         transactionCode: data.transaction_code || transactionCode,
+        transactionUuid: data.transaction_uuid,
         status: "completed",
         totalAmount: data.total_amount,
         productCode: data.product_code,

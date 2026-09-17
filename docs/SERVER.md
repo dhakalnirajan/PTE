@@ -204,25 +204,63 @@ appRouter = router({
 ### `server/routers/paymentRouter.ts` (protected + public)
 - `payment.getPlans` — public → `getSubscriptionPlans`.
 - `payment.initiateESewaPayment` — `{ planId, productName,
-  productDescription }`; refId `PTE{userId}{ts}`; **hardcoded amount 1000
-  NPR**; productCode `PLAN{planId}`; returns `{ paymentId: 0, paymentUrl,
-  referenceId }`.
-- `payment.verifyESewaPayment` — `{ transactionCode }`.
+  productDescription }`; refId `PTE{userId}{ts}`; amount = the plan's own
+  `price`; productCode `PLAN{planId}`; the plan id + product code are stored in
+  the payment row's `metadata`; returns `{ paymentId, paymentUrl, referenceId }`
+  where `paymentId` is the real `payments` row id.
+- `payment.verifyESewaPayment` — `{ transactionCode (q), referenceId? }`;
+  verifies with eSewa, finds the ledger row by `referenceId` →
+  `verification.transactionUuid` → `transactionCode` (ownership-checked),
+  marks it completed and calls `fulfilPayment` (subscription + receipt email).
 - `payment.initiateKhaltiPayment` — `{ planId, productName,
   productDescription, amount, customerEmail, customerPhone }`; refId
-  `KHL{userId}{ts}`; paisa conversion; returns `{ paymentId: 0, pidx,
-  paymentUrl, referenceId }`.
-- `payment.verifyKhaltiPayment` — `{ pidx, transactionId, amount }`.
+  `KHL{userId}{ts}`; amount = plan price; paisa conversion; the returned `pidx`
+  is persisted on the payment row (`setPaymentPidx`) so the redirect and webhook
+  can find it; returns `{ paymentId, pidx, paymentUrl, referenceId }`.
+- `payment.verifyKhaltiPayment` — `{ pidx, transactionId?, amount }`; looks the
+  payment up by `pidx` (falling back to `referenceId`), marks it completed and
+  fulfils it.
 - `payment.getPaymentHistory` — `getUserPayments(uid, 20)`.
 - `payment.getActiveSubscription` — `getSubscriptionWithPlan(...)`.
+- `payment.getSubscriptionHistory` — every subscription for the user, each
+  joined with its plan.
+- `payment.setAutoRenew` — `{ subscriptionId, autoRenew }` (ownership-checked,
+  active subscriptions only).
+- `payment.changePlan` — `{ subscriptionId, planId }`; rejects the current plan,
+  starts a fresh monthly/yearly period, clears `canceledAt`.
+- `payment.reactivateSubscription` — `{ subscriptionId }`; sets `status active`,
+  clears `canceledAt`, rolls the period forward.
 - `payment.cancelSubscription` — `{ subscriptionId }` (ownership check →
-  400/FORBIDDEN).
+  403) and emails the cancellation confirmation.
 
 ### `server/routers/systemAdminRouter.ts` (admin-only)
-- Health/stats/alerts/logs/config/backup/api-keys/engagement/learning/revenue/
-  LTV/churn-retention. Real-data queries via `server/admin/adminDb.ts` +
-  `analyticsDb.ts`; several procedures (backup, api keys, health, alerts,
-  performance) return mock values or log-only.
+
+Health/stats/content/logs/users/config/backup/api-keys/alerts/performance plus
+engagement/learning/revenue/LTV/churn-retention. Every procedure reads or writes
+the database through `server/admin/adminDb.ts` + `analyticsDb.ts`; none return
+canned data.
+
+- `getSystemHealth` — probes the DB and reports which integrations have
+  credentials (`isEmailConfigured()` for Resend, env checks for the gateways,
+  LLM, storage).
+- `getSystemStats` — `totalUsers`, `activeUsers` (signed in ≤30d),
+  `totalSessions`, `totalRevenue`, `activeSubscriptions`, `failedPayments`,
+  `failedPayments7d`, `pendingPayments`, `responsesScored`.
+- `getUsers` / `setUserRole` / `setUserBan` / `toggleUserBan` — real user CRUD
+  with self-ban and self-demotion guards.
+- `getSystemConfig` / `updateSystemConfig` — real `system_config` upserts.
+- `triggerBackup` / `getBackupHistory` / `deleteBackup` — a backup captures a
+  real row-count snapshot and persists size + duration.
+- `getApiKeys` / `createApiKey` / `rotateApiKey` / `revokeApiKey` /
+  `deleteApiKey` — sha256-hashed secrets; plaintext returned once at
+  create/rotate, otherwise masked (`pte_xxxx••••••••abcd`).
+- `getSystemAlerts` / `acknowledgeAlert` / `reopenAlert` — alerts derived from
+  live signals (failed or stale-pending payments, subscriptions expiring in 3
+days, banned accounts, unconfigured integrations), synced into `system_alerts`
+  with acknowledgement state preserved.
+- `getPerformanceMetrics` — measured DB latency (`select 1`), 24h active
+  users/sessions/responses, 7-day payment-failure rate, heap used, process
+  uptime, Node version.
 
 ## Storage (life build)
 - `storagePut(relKey, data, contentType)` — Supabase storage upload bucket
@@ -346,31 +384,92 @@ Shared pattern: deterministic pre-scoring → LLM (`invokeLLM`, strict
   subscription create/cancel/lookup, `createSubscription` sets endDate +1mo/
   +1yr by plan interval, analytics (revenue, by gateway, active subs, by plan).
 
-## Webhooks (`server/webhooks/paymentWebhook.ts`) — NOT MOUNTED
+## Payment Fulfilment (`server/payment/fulfilment.ts`)
 
-- `POST /esewa`, `POST /khalti`, `POST /khalti/verify` handlers exist but no
-  router imports this module. Khalti HMAC check optional
-  (`khalti-signature` header, sha256, `KHALTI_SECRET_KEY`).
+Single code path for "the payment succeeded", shared by the tRPC verification
+procedures and the gateway webhooks so both behave identically:
 
-## Email (`server/email/emailService.ts`) — dead code
+- `resolvePlanId(payment, productCode?)` — reads `metadata.planId`, falling back
+  to `PLAN{id}` in the product code.
+- `readPidx(payment)` — the stored Khalti `pidx`.
+- `fulfilPayment(payment, { productCode? })` — looks up the plan, creates the
+  subscription, links the payment to it (`attachPaymentToSubscription`), and
+  sends the receipt + welcome email. Idempotent: a payment already linked to a
+  subscription is skipped, so repeated webhook deliveries are safe.
 
-- `sendEmail` log-only stub returning fake `msg_{ts}_{rand}`.
-- `sendPaymentReceipt`, `sendSubscriptionRenewalReminder`, `sendWelcomeEmail`,
-  `sendCancellationConfirmation` — branded HTML templates, sender
-  `PTEMaster <noreply@ptepractice.com>`.
+## Webhooks (`server/webhooks/paymentWebhook.ts`) — mounted
+
+Mounted at `/api/webhooks/payment` from `server/_core/app.ts`, so both the
+Vercel handler (`api/index.ts`) and the Node server (`server/_core/index.ts`)
+serve it.
+
+- `POST /esewa` — verifies with eSewa, resolves the payment by `pid` →
+  `transactionUuid` → `refId`, marks it completed, fulfils it.
+- `POST /khalti` — optional HMAC check (`khalti-signature`, sha256,
+  `KHALTI_SECRET_KEY`), requires `status === "Completed"`, resolves by `pidx`,
+  marks completed, fulfils.
+- `POST /khalti/verify` — same, for the frontend redirect path.
+
+## Email (`server/email/emailService.ts`)
+
+- `sendEmail` POSTs to the Resend HTTP API (`https://api.resend.com/emails`)
+  with `Authorization: Bearer {RESEND_API_KEY}` over `fetch`. With no API key it
+  logs the skip and returns `{ success: false, error: "email_not_configured" }` —
+  it never fabricates a message id.
+- `isEmailConfigured()` is the same signal the admin health panel reports.
+- `sendPaymentReceipt` (called from `fulfilPayment`), `sendWelcomeEmail` (same),
+  `sendCancellationConfirmation` (called by `payment.cancelSubscription`), and
+  `sendSubscriptionRenewalReminder` (called by the subscription lifecycle job) —
+  branded HTML, sender `SENDER_NAME <SENDER_EMAIL>`.
+
+## Subscription Lifecycle Jobs (`server/jobs/subscriptionJobs.ts`)
+
+`runSubscriptionLifecycle()` performs one pass of:
+
+- **Renewal reminders** — `sendRenewalReminders()` finds active subscriptions
+  whose `endDate` falls within the next 3 days with `reminderSentAt` null. It
+  claims each row first (null-guarded update of `reminderSentAt`), so concurrent
+  runs or a crash mid-send cannot double-send, then emails via
+  `sendSubscriptionRenewalReminder`. The flag is cleared whenever a new period
+  starts.
+- **Auto-renewal / expiry** — `processRenewalsAndExpiry()` handles active
+  subscriptions whose `endDate` has passed:
+  - `autoRenew: true` → `startDate = now`, `endDate`/`renewalDate` rolled forward
+    one monthly/yearly period, `reminderSentAt` cleared, and a `pending`
+    renewal payment (`referenceId: RENEW{subId}{ts}`, `metadata.kind:
+    "auto_renewal"`) inserted for reconciliation. eSewa/Khalti cannot charge
+    off-session, so the subscription stays active while the pending row marks
+    what still needs collecting.
+  - `autoRenew: false` → `status = "expired"`.
+
+Trigger points:
+- `POST /api/cron/subscriptions` (`server/_core/cronRoutes.ts`) — Vercel Cron
+  header (`x-vercel-cron`) or `Authorization: Bearer {CRON_SECRET}`; scheduled
+  every 6 hours via `vercel.json` `crons`.
+- The long-running Node server (`server/_core/index.ts`) also runs the job on an
+  unref'd 6-hour `setInterval`.
+
+## Admin (`server/admin/`)
 
 ## Admin (`server/admin/`)
 
 - `adminAuth.ts` — dead code (`isUserAdmin`, `getAdminUser`, promote/demote).
-- `adminDb.ts` — real queries: `getSystemStatistics`, `getAdminUsers`,
-  `getPlatformUsers(page)`, `getUserSubscriptions`, `getPaymentTransactions`,
-  `getRevenueByGateway`, `getUserActivityLogs`, `getUserGrowthStats`,
-  `toggleUserBan` (log-only), `getSubscriptionStats`.
+- `adminDb.ts` — `getSystemStatistics`, `getAdminUsers`, `getPlatformUsers(page
+  + search)`, `setUserRole`, `setUserBan`, `toggleUserBan`,
+  `getQuestionCountsBySection`, `getSystemConfigEntries`, `upsertSystemConfig`,
+  `getUserSubscriptions`, `getPaymentTransactions`, `getRevenueByGateway`,
+  `getUserActivityLogs`, `getUserGrowthStats`, `getSubscriptionStats`, plus the
+  system-ops helpers: `getTableRowCounts`, `createBackup`, `getBackups`,
+  `deleteBackup`, `getSystemAlerts`, `acknowledgeAlert`, `reopenAlert`,
+  `createApiKey`, `listApiKeys`, `rotateApiKey`, `revokeApiKey`, `deleteApiKey`,
+  `getPerformanceMetrics`.
 - `analyticsDb.ts` — `getUserEngagementMetrics` (DAU, login frequency),
   `getLearningPerformanceMetrics` (avg scores, distribution, weak areas,
   improvement trends), `getPaymentRevenueMetrics` (MRR, by method, failed,
-  daily), `getSystemHealthMetrics` (mock), `getCustomerLifetimeValue` (top 100
-  + AVG), `getChurnRetentionMetrics`.
+  daily), `getCustomerLifetimeValue` (top 100 + AVG),
+  `getChurnRetentionMetrics`. (`getSystemHealthMetrics`, which returned
+  hardcoded uptime/CPU figures, was removed — health lives in
+  `getSystemHealth` and `getPerformanceMetrics`.)
 
 ## Notifications (`server/_core/notification.ts`)
 

@@ -84,6 +84,9 @@ export const users = pgTable("users", {
   currentLevel: currentLevelEnum("currentLevel").default("intermediate"),
   dailyGoalMinutes: integer("dailyGoalMinutes").default(30),
   notificationsEnabled: boolean("notificationsEnabled").default(true),
+  isBanned: boolean("isBanned").default(false).notNull(),
+  bannedAt: timestamp("bannedAt", { withTimezone: true }),
+  banReason: text("banReason"),
 });
 
 export type User = typeof users.$inferSelect;
@@ -270,6 +273,8 @@ export const subscriptions = pgTable("subscriptions", {
   renewalDate: timestamp("renewalDate", { withTimezone: true }),
   autoRenew: boolean("autoRenew").default(true),
   canceledAt: timestamp("canceledAt", { withTimezone: true }),
+  /** Set by the cron job when a renewal reminder email has been sent for the current period */
+  reminderSentAt: timestamp("reminderSentAt", { withTimezone: true }),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -298,6 +303,63 @@ export const payments = pgTable("payments", {
 
 export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = typeof payments.$inferInsert;
+
+export const systemConfig = pgTable("system_config", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 128 }).notNull().unique(),
+  value: json("value").notNull(),
+  updatedBy: integer("updatedBy").references(() => users.id),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type SystemConfig = typeof systemConfig.$inferSelect;
+
+export const systemBackups = pgTable("system_backups", {
+  id: serial("id").primaryKey(),
+  backupId: varchar("backupId", { length: 64 }).notNull().unique(),
+  status: varchar("status", { length: 32 }).default("completed").notNull(),
+  sizeBytes: integer("sizeBytes").default(0).notNull(),
+  durationMs: integer("durationMs").default(0).notNull(),
+  notes: text("notes"),
+  snapshot: json("snapshot"),
+  triggeredBy: integer("triggeredBy").references(() => users.id),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type SystemBackup = typeof systemBackups.$inferSelect;
+
+export const systemAlerts = pgTable("system_alerts", {
+  id: serial("id").primaryKey(),
+  alertKey: varchar("alertKey", { length: 128 }).notNull().unique(),
+  severity: varchar("severity", { length: 16 }).default("info").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  source: varchar("source", { length: 64 }).default("system").notNull(),
+  acknowledged: boolean("acknowledged").default(false).notNull(),
+  acknowledgedBy: integer("acknowledgedBy").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledgedAt", { withTimezone: true }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type SystemAlert = typeof systemAlerts.$inferSelect;
+
+export const apiKeys = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  keyPrefix: varchar("keyPrefix", { length: 24 }).notNull(),
+  keyLast4: varchar("keyLast4", { length: 8 }).notNull(),
+  secretHash: varchar("secretHash", { length: 128 }).notNull(),
+  status: varchar("status", { length: 16 }).default("active").notNull(),
+  createdBy: integer("createdBy").references(() => users.id),
+  lastUsedAt: timestamp("lastUsedAt", { withTimezone: true }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  rotatedAt: timestamp("rotatedAt", { withTimezone: true }),
+  revokedAt: timestamp("revokedAt", { withTimezone: true }),
+});
+
+export type ApiKey = typeof apiKeys.$inferSelect;
 
 export const milestones = pgTable("milestones", {
   id: serial("id").primaryKey(),
